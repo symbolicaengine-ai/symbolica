@@ -121,4 +121,4 @@ agent_registries/      ← Per-agent *.reg.yml
 
 ## 🛡 License
 
-Licensed under the terms of the **MIT License** – see `LICENSE` for details.
+Licensed under the terms of the **Apache 2.0 License** – see `LICENSE` for details.
