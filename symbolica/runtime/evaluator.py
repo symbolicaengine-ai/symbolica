@@ -2,15 +2,19 @@
 symbolica.runtime.evaluator
 ===========================
 
-Forward-chaining evaluator using a priority-sorted DAG supplied
-by the runtime loader.  Supports:
+Pure rule evaluation engine. Supports:
 
 * inline infix conditions  – "x == 1 and y > 2"
 * structured YAML trees   – all / any / not lists
 * chaining via then.set   – merged into facts during same pass
 * per-request memo cache
-* decision-severity ordering from rule-pack header
 * trace levels: compact | verbose | debug  (via TraceBuilder)
+
+The engine is PURE:
+- Evaluates conditions → Boolean (rule fired or not)
+- Executes actions → Sets whatever fields rules specify
+- Returns ALL fields that rules set
+- Agents decide what to do with output fields
 """
 from __future__ import annotations
 
@@ -93,69 +97,35 @@ def infer(
     trace_level: str = "compact",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    Evaluate rules for *agent* against *facts*.
+    Pure rule evaluation for *agent* against *facts*.
 
     Returns
     -------
-    verdict : dict   (whatever facts rules set, e.g., decision_status)
+    verdict : dict   (ALL fields that fired rules set - no filtering)
     trace   : dict   (per TraceBuilder level)
     """
     pack = get_pack()
     dag_idx = pack.dag_for_agent(agent)          # list[int] priority-sorted
-    status_rank = {
-        s: i
-        for i, s in enumerate(
-            pack.header.get(
-                "status_precedence",
-                ["REJECTED", "ESCALATE", "PARTIAL", "APPROVED"],
-            ),
-            start=1,
-        )
-    }
 
     enriched = facts.copy()
     cache: Dict[str, bool] = {}
     tb = TraceBuilder(level=trace_level, run_id=str(uuid.uuid4()))
-    top_status: str | None = None
-    top_reason: str | None = None
-    top_priority = -1
 
     for idx in dag_idx:
         rule = pack.rules[idx]
         start_ns = tb.begin_rule(rule["id"])
 
         if _eval_tree(rule["if"], enriched, cache):
+            # Rule fired - execute actions
             set_dict = rule["then"].get("set", {})
             enriched.update(set_dict)
             tb.end_rule(rule, True, rule["if"], set_dict, start_ns)
-
-            # update final decision heuristics (if project uses decision_status)
-            status = set_dict.get("decision_status")
-            reason = set_dict.get("reason")
-            prio = rule.get("priority", 50)
-            if status:
-                better = (
-                    top_status is None
-                    or status_rank.get(status, 0) > status_rank.get(top_status, 0)
-                    or (
-                        status_rank.get(status, 0) == status_rank.get(top_status, 0)
-                        and prio > top_priority
-                    )
-                )
-                if better:
-                    top_status, top_reason, top_priority = status, reason, prio
         else:
+            # Rule didn't fire
             tb.end_rule(rule, False, rule["if"], {}, start_ns)
 
-    # verdict: return only the fields rule authors set
-    verdict_keys = {"decision_status", "reason", "final_status"}
-    verdict = {k: v for k, v in enriched.items() if k in verdict_keys}
-
-    # If we tracked top_status via precedence, override
-    if top_status:
-        verdict["decision_status"] = top_status
-        if top_reason:
-            verdict["reason"] = top_reason
+    # Pure engine: return ALL fields that rules set (minus original facts)
+    verdict = {k: v for k, v in enriched.items() if k not in facts}
 
     trace_json = tb.finalize(enriched)
     return verdict, trace_json
