@@ -33,7 +33,7 @@ try:
         facts: Dict[str, Any]
         agent: str = Field(..., description="Agent / registry name")
         trace_level: str = Field(
-            "compact", regex="^(compact|verbose|debug)$"
+            "compact", pattern="^(compact|verbose|debug)$"
         )
         rulepack: Optional[pathlib.Path] = Field(
             None,
