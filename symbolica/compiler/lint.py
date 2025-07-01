@@ -6,7 +6,7 @@ Static checks for YAML rule files.  Fail-fast on:
 
 * Tabs used for indentation
 * Duplicate rule IDs
-* Missing mandatory keys  (id / if / then.set)
+* Missing mandatory keys (id, conditions, actions)
 * YAML syntax errors
 
 Warnings (non-fatal unless --strict):
@@ -25,11 +25,11 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import yaml
 
-MANDATORY_KEYS = ("id", "if", "then")
+MANDATORY_KEYS = ("id",)  # conditions and actions are validated separately
 INDENT_RE = re.compile(r"^\t+", flags=re.M)  # any tab at line start
 LONG_EXPR_RE = re.compile(r"\b(and|or)\b.*\b(and|or)\b", re.I)
 
@@ -63,31 +63,49 @@ def _load_yaml(file: pathlib.Path, res: LintResult):
         return None
 
 
-def _lint_rule(rule: Dict[str, any], file: pathlib.Path, res: LintResult):
-    # mandatory keys
-    if "rule" not in rule:
-        res.err(f"{file}: top-level key 'rule' missing")
-        return
-
-    block = rule["rule"]
+def _lint_rule(rule_data: dict, file: pathlib.Path, res: LintResult, rule_index: int = 0):
+    """Lint standardized rule format: { id, conditions, actions }"""
+    rule_id = rule_data.get('id', f'rule_{rule_index}')
+    
+    # Check mandatory keys
     for key in MANDATORY_KEYS:
-        if key not in block:
-            res.err(f"{file}: rule '{block.get('id','?')}' missing '{key}'")
+        if key not in rule_data:
+            res.err(f"{file}: rule '{rule_id}' missing '{key}'")
             return
+    
+    # Check conditions
+    conditions = rule_data.get("conditions", [])
+    if not conditions:
+        res.err(f"{file}: rule '{rule_id}' missing 'conditions' array")
+    elif isinstance(conditions, list):
+        for i, cond in enumerate(conditions):
+            if isinstance(cond, str) and len(cond) > 120:
+                res.warn(f"{file}: rule '{rule_id}' condition {i} >120 chars")
+            if isinstance(cond, str) and LONG_EXPR_RE.search(cond) and "(" not in cond:
+                res.warn(f"{file}: rule '{rule_id}' condition {i} mixed 'and/or' without parentheses")
+    
+    # Check actions
+    actions = rule_data.get("actions", [])
+    if not actions:
+        res.err(f"{file}: rule '{rule_id}' missing 'actions' array")
 
-    # then.set presence
-    if "set" not in block["then"]:
-        res.err(f"{file}: rule '{block['id']}' missing 'then.set' dict")
 
-    # expression lint
-    cond = block["if"]
-    if isinstance(cond, str):
-        if len(cond) > 120:
-            res.warn(f"{file}: rule '{block['id']}' condition >120 chars")
-        if LONG_EXPR_RE.search(cond) and "(" not in cond:
-            res.warn(
-                f"{file}: rule '{block['id']}' mixed 'and/or' without parentheses"
-            )
+def _lint_document(doc: dict, file: pathlib.Path, res: LintResult) -> List[str]:
+    """Lint a parsed YAML document and return list of rule IDs found."""
+    rule_ids = []
+    
+    # Only support standardized rules: array format
+    if "rules" not in doc or not isinstance(doc["rules"], list):
+        res.err(f"{file}: must contain 'rules:' array")
+        return rule_ids
+    
+    for i, rule_data in enumerate(doc["rules"]):
+        _lint_rule(rule_data, file, res, i)
+        rule_id = rule_data.get("id")
+        if rule_id:
+            rule_ids.append(rule_id)
+    
+    return rule_ids
 
 
 # ---------------------------------------------------------------- main entry
@@ -105,15 +123,14 @@ def lint_folder(rules_dir: str | pathlib.Path, strict: bool = False) -> int:
         if not data:
             continue
 
-        # a file may contain one rule or a list
-        rules = data if isinstance(data, list) else [data]
-        for rule in rules:
-            _lint_rule(rule, file, res)
-            rid = rule.get("rule", {}).get("id")
-            if rid:
-                if rid in rule_ids:
-                    res.err(f"{file}: duplicate id '{rid}'")
-                rule_ids.add(rid)
+        # Lint the document and collect rule IDs
+        file_rule_ids = _lint_document(data, file, res)
+        
+        # Check for duplicate IDs across all files
+        for rule_id in file_rule_ids:
+            if rule_id in rule_ids:
+                res.err(f"{file}: duplicate id '{rule_id}'")
+            rule_ids.add(rule_id)
 
     # report
     for w in res.warnings:
