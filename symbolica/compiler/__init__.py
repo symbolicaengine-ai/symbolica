@@ -31,6 +31,18 @@ from .lint import lint_folder, LintResult
 from .ast import Expr, Pred, And, Or, Not
 from .optimiser import optimise
 from .packager import build_pack
+from .expressions import (
+    ExpressionParser, 
+    parse_expression, 
+    evaluate_expression,
+    ExpressionNode,
+    LiteralNode,
+    FieldNode,
+    ComparisonNode,
+    ArithmeticNode,
+    FunctionCallNode,
+    BooleanNode
+)
 
 # New extensible architecture
 from .base import (
@@ -170,11 +182,35 @@ def compile_rules(
 def get_compiler_info() -> Dict[str, Any]:
     """Get information about the compiler capabilities."""
     return {
-        "supported_operators": ["==", "!=", ">", ">=", "<", "<=", "in", "not in"],
-        "supported_ast_nodes": ["Pred", "And", "Or", "Not"],
+        "supported_operators": {
+            "comparison": ["==", "!=", ">", ">=", "<", "<="],
+            "membership": ["in", "not in"],
+            "arithmetic": ["+", "-", "*", "/", "%"],
+            "boolean": ["all", "any", "not"]
+        },
+        "supported_functions": {
+            "string_helpers": ["startswith", "endswith", "contains"]
+        },
+        "supported_features": {
+            "null_checks": ["field == null", "field != null"],
+            "parentheses": True,
+            "list_literals": True,
+            "nested_expressions": True
+        },
+        "expression_formats": [
+            "string_expressions",      # "amount > 1000"
+            "structured_yaml",         # { all: [...] }
+            "mixed_expressions"        # [ "expr", { any: [...] } ]
+        ],
+        "supported_ast_nodes": [
+            "Pred", "And", "Or", "Not", 
+            "LiteralNode", "FieldNode", "ComparisonNode", 
+            "ArithmeticNode", "FunctionCallNode", "BooleanNode"
+        ],
         "yaml_features": ["string_expressions", "structured_conditions", "priorities", "agents"],
         "optimization_passes": ["priority_sort", "predicate_index", "agent_grouping"],
         "rule_formats": ["single_rule", "multi_rule_array"],
         "compiler_stages": ["validation", "parsing", "optimization", "packaging"],
-        "extensible": True
+        "extensible": True,
+        "comprehensive_expressions": True
     } 

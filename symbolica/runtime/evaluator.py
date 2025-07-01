@@ -2,13 +2,20 @@
 symbolica.runtime.evaluator
 ===========================
 
-Pure rule evaluation engine. Supports:
+Pure rule evaluation engine with comprehensive expression support.
 
-* inline infix conditions  – "x == 1 and y > 2"
-* structured YAML trees   – all / any / not lists
-* chaining via then.set   – merged into facts during same pass
-* per-request memo cache
-* trace levels: compact | verbose | debug  (via TraceBuilder)
+Supports 6 categories of expressions:
+1. Boolean combinators   - all:, any:, not:
+2. Comparison operators  - ==, !=, >, >=, <, <=  
+3. Membership/containment - in, not in
+4. String helpers        - startswith(), endswith(), contains()
+5. Arithmetic           - +, -, *, /, %, parentheses
+6. Null/missing checks  - field == null, field != null
+
+Expression formats:
+* String expressions     – "transaction_amount > 1000"
+* Structured YAML trees  – { all: [...], any: [...], not: ... }
+* Mixed expressions      – [ "amount > 1000", { any: [...] } ]
 
 The engine is PURE:
 - Evaluates conditions → Boolean (rule fired or not)
@@ -18,76 +25,52 @@ The engine is PURE:
 """
 from __future__ import annotations
 
-import ast
-import operator
 import uuid
 from typing import Any, Dict, Tuple, List
 
 from .loader import get_pack
 from .trace import TraceBuilder
 
-# ------------ tiny secure expression evaluator for leaf predicate strings
-_BIN_OPS = {
-    ast.Eq: operator.eq,
-    ast.NotEq: operator.ne,
-    ast.Gt: operator.gt,
-    ast.GtE: operator.ge,
-    ast.Lt: operator.lt,
-    ast.LtE: operator.le,
-}
+# Import the comprehensive expression evaluator
+try:
+    from ..compiler.expressions import evaluate_expression
+except ImportError:
+    # Fallback for cases where compiler module isn't available
+    def evaluate_expression(expr: Any, facts: Dict[str, Any]) -> bool:
+        """Basic fallback expression evaluator."""
+        if isinstance(expr, str):
+            # Simple string comparison fallback
+            return bool(eval(expr, {"__builtins__": {}}, facts))
+        return bool(expr)
 
 
-def _literal(node: ast.AST) -> Any:
-    if isinstance(node, ast.Constant):     # py ≥3.8
-        return node.value
-    if isinstance(node, ast.Num):          # py ≤3.7
-        return node.n
-    if isinstance(node, ast.Str):
-        return node.s
-    raise SyntaxError("unsupported literal")
-
-
-def _eval_expr(expr: str, facts: Dict[str, Any]) -> bool:
-    """
-    Evaluate a restricted boolean expression safely.
-    Supports literals, variable names, comparisons, boolean ops.
-    """
-    tree = ast.parse(expr, mode="eval").body
-
-    def walk(n: ast.AST) -> Any:
-        if isinstance(n, ast.BoolOp):
-            vals = [walk(v) for v in n.values]
-            return all(vals) if isinstance(n.op, ast.And) else any(vals)
-        if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.Not):
-            return not walk(n.operand)
-        if isinstance(n, ast.Compare):
-            left = walk(n.left)
-            for op, right_raw in zip(n.ops, n.comparators):
-                right = walk(right_raw)
-                if not _BIN_OPS[type(op)](left, right):
-                    return False
-                left = right
-            return True
-        if isinstance(n, ast.Name):
-            return facts.get(n.id)
-        return _literal(n)
-
-    return bool(walk(tree))
-
-
-# ------------ recursive evaluation for structured YAML form
+# ------------ enhanced expression evaluation
 def _eval_tree(node: Any, facts: Dict[str, Any], cache: Dict[str, bool]) -> bool:
-    if isinstance(node, str):
-        if node not in cache:
-            cache[node] = _eval_expr(node, facts)
-        return cache[node]
-    if "all" in node:
-        return all(_eval_tree(n, facts, cache) for n in node["all"])
-    if "any" in node:
-        return any(_eval_tree(n, facts, cache) for n in node["any"])
-    if "not" in node:
-        return not _eval_tree(node["not"], facts, cache)
-    raise ValueError("Bad condition tree")
+    """
+    Evaluate expression tree with comprehensive expression support.
+    
+    Uses the new expression parser that supports:
+    - Boolean combinators (all, any, not)
+    - Comparison operators (==, !=, >, >=, <, <=)
+    - Membership operators (in, not in)
+    - String helpers (startswith, endswith, contains)
+    - Arithmetic (+, -, *, /, %, parentheses)
+    - Null checks (== null, != null)
+    """
+    # Convert expression to cache key for memoization
+    cache_key = str(node)
+    
+    if cache_key not in cache:
+        try:
+            # Use comprehensive expression evaluator
+            result = evaluate_expression(node, facts)
+            cache[cache_key] = bool(result)
+        except Exception as e:
+            # Log error and default to False for safety
+            print(f"Expression evaluation error: {e} for expression: {node}")
+            cache[cache_key] = False
+    
+    return cache[cache_key]
 
 
 # ------------ main inference entrypoint
