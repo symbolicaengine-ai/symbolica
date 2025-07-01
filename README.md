@@ -113,7 +113,6 @@ agent_registries/      ← Per-agent *.reg.yml
 
 ## 📈 Status & Roadmap
 
-* MVP engine passes S₁/S₂ insurance datasets in <20 ms.
 * Predicate-index & multi-level traces implemented.
 * Next up: aggregates, temporal rules, Rete event mode, UI playground.
 
