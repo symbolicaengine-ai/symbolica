@@ -18,4 +18,9 @@ class RuleEngineError(SymbolicaError):
 
 class RegistryNotFoundError(SymbolicaError):
     """Registry file not found."""
+    pass
+
+
+class ValidationError(SymbolicaError):
+    """Input validation failed."""
     pass 

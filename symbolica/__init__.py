@@ -32,7 +32,7 @@ if sys.version_info < (3, 8):
     raise RuntimeError("Symbolica requires Python 3.8 or higher")
 
 # Import main classes from core modules
-from .core import SymbolicaEngine, Result, SymbolicaError, RuleEngineError, RegistryNotFoundError
+from .core import SymbolicaEngine, Result, SymbolicaError, RuleEngineError, RegistryNotFoundError, ValidationError
 from .utils import quick_infer, compile_rules
 
 # Clean exports
@@ -49,6 +49,7 @@ __all__ = [
     "SymbolicaError",
     "RuleEngineError",
     "RegistryNotFoundError",
+    "ValidationError",
     
     # Version
     "__version__"

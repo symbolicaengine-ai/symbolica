@@ -13,7 +13,7 @@ import pathlib
 import json
 import tempfile
 
-from .exceptions import RuleEngineError, RegistryNotFoundError
+from .exceptions import RuleEngineError, RegistryNotFoundError, ValidationError
 from .result import Result
 
 
@@ -133,20 +133,33 @@ class SymbolicaEngine:
         Returns:
             Result object with reasoning outcome and trace
         """
-        # Load registry and get agent name for runtime compatibility
-        agent_name = self._load_registry(rules)
+        # Input validation
+        if not isinstance(facts, dict):
+            raise ValidationError("Facts must be a dictionary")
+        
+        if trace_level not in ["compact", "verbose", "debug"]:
+            raise ValidationError(f"trace_level must be 'compact', 'verbose', or 'debug'")
         
         try:
+            # Load registry and get agent name for runtime compatibility
+            agent_name = self._load_registry(rules)
+            
             from symbolica.runtime.evaluator import infer as _infer
             verdict, trace = _infer(facts, agent_name, trace_level)
             
             result = Result(verdict, trace, context, str(rules))
             self._reasoning_history.append(result)
             
+            # Basic history bounds
+            if len(self._reasoning_history) > 1000:
+                self._reasoning_history = self._reasoning_history[-500:]  # Keep recent half
+            
             return result
             
+        except (RegistryNotFoundError, ValidationError):
+            raise  # Re-raise expected errors
         except Exception as e:
-            raise RuleEngineError(f"Reasoning failed with rules '{rules}': {e}") from e
+            raise RuleEngineError(f"Unexpected error during inference: {e}") from e
     
     async def infer_async(self, 
                          facts: Dict[str, Any], 
