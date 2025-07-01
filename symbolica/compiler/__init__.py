@@ -43,6 +43,11 @@ from .expressions import (
     FunctionCallNode,
     BooleanNode
 )
+from .schema import (
+    ValidationResult,
+    validate_rule_document,
+    get_schema_info
+)
 
 # New extensible architecture
 from .base import (

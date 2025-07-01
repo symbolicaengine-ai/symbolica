@@ -2,21 +2,19 @@
 symbolica.compiler.lint
 =======================
 
-Static checks for YAML rule files.  Fail-fast on:
+Static checks for YAML rule files with comprehensive schema validation.
 
-* Tabs used for indentation
-* Duplicate rule IDs
-* Missing mandatory keys (id, conditions, actions)
-* YAML syntax errors
-
-Warnings (non-fatal unless --strict):
-
-* Inline condition > 120 characters
-* Mixed AND/OR in a single string without parentheses
+Validates:
+* Rule structure against canonical schema
+* Required and optional fields
+* Field types and constraints
+* ID format and uniqueness
+* Expression syntax
+* YAML formatting (tabs, syntax errors)
 
 Used by the CLI command::
 
-    symbolica lint   --rules-dir  symbolica_rules
+    symbolica lint --rules-dir symbolica_rules [--strict]
 
 Returns number of *errors* (exit non-zero on CI).
 """
@@ -29,7 +27,9 @@ from typing import Dict, List
 
 import yaml
 
-MANDATORY_KEYS = ("id",)  # conditions and actions are validated separately
+from .schema import validate_rule_document
+
+# Legacy patterns for additional checks
 INDENT_RE = re.compile(r"^\t+", flags=re.M)  # any tab at line start
 LONG_EXPR_RE = re.compile(r"\b(and|or)\b.*\b(and|or)\b", re.I)
 
@@ -63,84 +63,114 @@ def _load_yaml(file: pathlib.Path, res: LintResult):
         return None
 
 
-def _lint_rule(rule_data: dict, file: pathlib.Path, res: LintResult, rule_index: int = 0):
-    """Lint standardized rule format: { id, conditions, actions }"""
-    rule_id = rule_data.get('id', f'rule_{rule_index}')
+def _lint_document(doc: dict, file: pathlib.Path, res: LintResult, strict: bool = False) -> List[str]:
+    """
+    Lint a parsed YAML document using comprehensive schema validation.
     
-    # Check mandatory keys
-    for key in MANDATORY_KEYS:
-        if key not in rule_data:
-            res.err(f"{file}: rule '{rule_id}' missing '{key}'")
-            return
+    Args:
+        doc: Parsed YAML document
+        file: Source file path
+        res: LintResult to accumulate issues
+        strict: If True, warnings are treated as errors
+        
+    Returns:
+        List of rule IDs found in the document
+    """
+    # Use schema validation for contract enforcement
+    validation_result = validate_rule_document(doc, str(file))
     
-    # Check conditions
-    conditions = rule_data.get("conditions", [])
-    if not conditions:
-        res.err(f"{file}: rule '{rule_id}' missing 'conditions' array")
-    elif isinstance(conditions, list):
-        for i, cond in enumerate(conditions):
-            if isinstance(cond, str) and len(cond) > 120:
-                res.warn(f"{file}: rule '{rule_id}' condition {i} >120 chars")
-            if isinstance(cond, str) and LONG_EXPR_RE.search(cond) and "(" not in cond:
-                res.warn(f"{file}: rule '{rule_id}' condition {i} mixed 'and/or' without parentheses")
+    # Add schema issues to lint result
+    for error in validation_result.errors:
+        res.err(error)
+    for warning in validation_result.warnings:
+        res.warn(warning)
     
-    # Check actions
-    actions = rule_data.get("actions", [])
-    if not actions:
-        res.err(f"{file}: rule '{rule_id}' missing 'actions' array")
-
-
-def _lint_document(doc: dict, file: pathlib.Path, res: LintResult) -> List[str]:
-    """Lint a parsed YAML document and return list of rule IDs found."""
+    # Extract rule IDs for duplicate checking across files
     rule_ids = []
+    if isinstance(doc, dict) and "rules" in doc and isinstance(doc["rules"], list):
+        for rule in doc["rules"]:
+            if isinstance(rule, dict) and "id" in rule:
+                rule_ids.append(rule["id"])
     
-    # Only support standardized rules: array format
-    if "rules" not in doc or not isinstance(doc["rules"], list):
-        res.err(f"{file}: must contain 'rules:' array")
-        return rule_ids
-    
-    for i, rule_data in enumerate(doc["rules"]):
-        _lint_rule(rule_data, file, res, i)
-        rule_id = rule_data.get("id")
-        if rule_id:
-            rule_ids.append(rule_id)
+    # Additional legacy checks for expression patterns
+    _lint_legacy_patterns(doc, file, res)
     
     return rule_ids
+
+
+def _lint_legacy_patterns(doc: dict, file: pathlib.Path, res: LintResult):
+    """Additional legacy pattern checks for backwards compatibility."""
+    if not isinstance(doc, dict) or "rules" not in doc:
+        return
+    
+    for i, rule in enumerate(doc.get("rules", [])):
+        if not isinstance(rule, dict):
+            continue
+            
+        rule_id = rule.get("id", f"rule_{i}")
+        conditions = rule.get("conditions", [])
+        
+        if isinstance(conditions, list):
+            for j, cond in enumerate(conditions):
+                if isinstance(cond, str):
+                    # Check for mixed AND/OR without parentheses
+                    if LONG_EXPR_RE.search(cond) and "(" not in cond:
+                        res.warn(f"{file}: rule '{rule_id}' condition {j} has mixed 'and/or' without parentheses")
 
 
 # ---------------------------------------------------------------- main entry
 def lint_folder(rules_dir: str | pathlib.Path, strict: bool = False) -> int:
     """
-    Lint every *.yaml under *rules_dir*.  Returns error count.
-    If *strict* is True, warnings are counted as errors.
+    Lint every *.yaml under *rules_dir* with comprehensive schema validation.
+    
+    Args:
+        rules_dir: Directory containing rule files
+        strict: If True, warnings are counted as errors
+        
+    Returns:
+        Number of errors found (for CI exit codes)
     """
     res = LintResult()
     rule_ids: set[str] = set()
 
     path = pathlib.Path(rules_dir)
+    file_count = 0
+    
     for file in path.rglob("*.yaml"):
+        file_count += 1
         data = _load_yaml(file, res)
         if not data:
             continue
 
-        # Lint the document and collect rule IDs
-        file_rule_ids = _lint_document(data, file, res)
+        # Comprehensive schema validation
+        file_rule_ids = _lint_document(data, file, res, strict)
         
         # Check for duplicate IDs across all files
         for rule_id in file_rule_ids:
             if rule_id in rule_ids:
-                res.err(f"{file}: duplicate id '{rule_id}'")
+                res.err(f"{file}: duplicate rule ID '{rule_id}' (already defined in another file)")
             rule_ids.add(rule_id)
 
-    # report
-    for w in res.warnings:
-        print("⚠", w, file=sys.stderr)
-    for e in res.errors:
-        print("❌", e, file=sys.stderr)
+    # Enhanced reporting
+    if res.warnings:
+        print(f"\nWARNINGS ({len(res.warnings)}):", file=sys.stderr)
+        for w in res.warnings:
+            print(f"{w}", file=sys.stderr)
+    
+    if res.errors:
+        print(f"\nERRORS ({len(res.errors)}):", file=sys.stderr)
+        for e in res.errors:
+            print(f"{e}", file=sys.stderr)
 
+    # Summary
     err_count = len(res.errors) + (len(res.warnings) if strict else 0)
+    total_rules = len(rule_ids)
+    
     if err_count:
-        print(f"\n{err_count} problem(s) found.", file=sys.stderr)
+        print(f"\nSUMMARY: {err_count} problem(s) found in {file_count} files ({total_rules} rules)", file=sys.stderr)
+        if strict and res.warnings:
+            print("   (warnings treated as errors in strict mode)", file=sys.stderr)
     else:
-        print("No lint errors.", file=sys.stderr)
+        print(f"SUCCESS: {file_count} files validated, {total_rules} rules passed schema validation", file=sys.stderr)
+    
     return err_count
