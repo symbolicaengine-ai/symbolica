@@ -28,20 +28,17 @@ import pathlib
 # Core compiler components
 from .parser import parse_yaml, parse_yaml_file, RawRule
 from .lint import lint_folder, LintResult  
-from .ast import Expr, Pred, And, Or, Not
+from .ast import (
+    ASTNode, Literal, Field, Comparison, Arithmetic, Function, All, Any, Not,
+    # Legacy aliases
+    Expr, Pred, And, Or
+)
 from .optimiser import optimise
 from .packager import build_pack
 from .expressions import (
     ExpressionParser, 
     parse_expression, 
-    evaluate_expression,
-    ExpressionNode,
-    LiteralNode,
-    FieldNode,
-    ComparisonNode,
-    ArithmeticNode,
-    FunctionCallNode,
-    BooleanNode
+    evaluate_expression
 )
 from .schema import (
     ValidationResult,

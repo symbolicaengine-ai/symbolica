@@ -2,192 +2,22 @@
 symbolica.compiler.expressions
 ==============================
 
-Comprehensive expression parser for Symbolica rule conditions.
+Expression parser that builds AST nodes for Symbolica rule conditions.
 
-Supports 6 categories of expressions:
-1. Boolean combinators   - all:, any:, not:
-2. Comparison operators  - ==, !=, >, >=, <, <=  
-3. Membership/containment - in, not in
-4. String helpers        - startswith(), endswith(), contains()
-5. Arithmetic           - +, -, *, /, %, parentheses
-6. Null/missing checks  - field == null, field != null
-
-Expression formats:
-- String expressions: "transaction_amount > 1000"
-- YAML structured: { all: [...], any: [...], not: ... }
-- Mixed: [ "amount > 1000", { any: [...] } ]
+This module parses various expression formats and converts them to AST nodes
+from symbolica.compiler.ast for evaluation.
 """
 
 from __future__ import annotations
 
 import ast
-import operator
 import re
-from typing import Any, Dict, List, Union, Callable
-from dataclasses import dataclass
+from typing import Any, Dict, List, Union
 
-
-# ============================================================================
-# EXPRESSION EVALUATION OPERATORS
-# ============================================================================
-
-# Comparison operators
-_COMPARISON_OPS = {
-    "==": operator.eq,
-    "!=": operator.ne,
-    ">": operator.gt,
-    ">=": operator.ge,
-    "<": operator.lt,
-    "<=": operator.le,
-}
-
-# Membership operators  
-_MEMBERSHIP_OPS = {
-    "in": lambda x, y: x in y if y is not None else False,
-    "not in": lambda x, y: x not in y if y is not None else True,
-}
-
-# Arithmetic operators
-_ARITHMETIC_OPS = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-    "%": operator.mod,
-}
-
-# String helper functions
-def _startswith(text: Any, prefix: Any) -> bool:
-    """Check if text starts with prefix."""
-    if text is None or prefix is None:
-        return False
-    return str(text).startswith(str(prefix))
-
-def _endswith(text: Any, suffix: Any) -> bool:
-    """Check if text ends with suffix.""" 
-    if text is None or suffix is None:
-        return False
-    return str(text).endswith(str(suffix))
-
-def _contains(text: Any, substr: Any) -> bool:
-    """Check if text contains substring."""
-    if text is None or substr is None:
-        return False
-    return str(substr) in str(text)
-
-_STRING_HELPERS = {
-    "startswith": _startswith,
-    "endswith": _endswith, 
-    "contains": _contains,
-}
-
-
-# ============================================================================
-# AST NODE CLASSES FOR EXPRESSION TREE
-# ============================================================================
-
-@dataclass
-class ExpressionNode:
-    """Base class for expression tree nodes."""
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        """Evaluate this node against the given facts."""
-        raise NotImplementedError
-
-
-@dataclass 
-class LiteralNode(ExpressionNode):
-    """Literal value node (number, string, boolean, null)."""
-    value: Any
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        return self.value
-
-
-@dataclass
-class FieldNode(ExpressionNode):
-    """Field reference node (variable lookup)."""
-    field_name: str
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        return facts.get(self.field_name)
-
-
-@dataclass
-class ComparisonNode(ExpressionNode):
-    """Comparison operation node."""
-    left: ExpressionNode
-    operator: str
-    right: ExpressionNode
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        left_val = self.left.evaluate(facts)
-        right_val = self.right.evaluate(facts)
-        
-        # Handle null comparisons specially
-        if self.operator in ["==", "!="]:
-            if right_val is None or (isinstance(right_val, str) and right_val.lower() == "null"):
-                return (left_val is None) if self.operator == "==" else (left_val is not None)
-            if left_val is None or (isinstance(left_val, str) and left_val.lower() == "null"):
-                return (right_val is None) if self.operator == "==" else (right_val is not None)
-        
-        # Regular comparison operations
-        if self.operator in _COMPARISON_OPS:
-            return _COMPARISON_OPS[self.operator](left_val, right_val)
-        elif self.operator in _MEMBERSHIP_OPS:
-            return _MEMBERSHIP_OPS[self.operator](left_val, right_val)
-        else:
-            raise ValueError(f"Unknown comparison operator: {self.operator}")
-
-
-@dataclass
-class ArithmeticNode(ExpressionNode):
-    """Arithmetic operation node."""
-    left: ExpressionNode
-    operator: str
-    right: ExpressionNode
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        left_val = self.left.evaluate(facts)
-        right_val = self.right.evaluate(facts)
-        
-        if self.operator in _ARITHMETIC_OPS:
-            return _ARITHMETIC_OPS[self.operator](left_val, right_val)
-        else:
-            raise ValueError(f"Unknown arithmetic operator: {self.operator}")
-
-
-@dataclass
-class FunctionCallNode(ExpressionNode):
-    """Function call node (string helpers)."""
-    function_name: str
-    args: List[ExpressionNode]
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        if self.function_name in _STRING_HELPERS:
-            arg_values = [arg.evaluate(facts) for arg in self.args]
-            return _STRING_HELPERS[self.function_name](*arg_values)
-        else:
-            raise ValueError(f"Unknown function: {self.function_name}")
-
-
-@dataclass
-class BooleanNode(ExpressionNode):
-    """Boolean combinator node (all, any, not)."""
-    operator: str  # "all", "any", "not"
-    children: List[ExpressionNode]
-    
-    def evaluate(self, facts: Dict[str, Any]) -> Any:
-        if self.operator == "all":
-            return all(child.evaluate(facts) for child in self.children)
-        elif self.operator == "any":
-            return any(child.evaluate(facts) for child in self.children)
-        elif self.operator == "not":
-            if len(self.children) != 1:
-                raise ValueError("NOT operator requires exactly one child")
-            return not self.children[0].evaluate(facts)
-        else:
-            raise ValueError(f"Unknown boolean operator: {self.operator}")
+# Import the unified AST system
+from .ast import (
+    ASTNode, Literal, Field, Comparison, Arithmetic, Function, All, Any, Not
+)
 
 
 # ============================================================================
@@ -195,7 +25,7 @@ class BooleanNode(ExpressionNode):
 # ============================================================================
 
 class ExpressionParser:
-    """Parser for Symbolica rule expressions."""
+    """Parser that converts expressions to AST nodes."""
     
     def __init__(self):
         # Regex patterns for parsing
@@ -206,8 +36,8 @@ class ExpressionParser:
             r"([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^,]+)\s*,\s*(.+)\s*\)"
         )
         
-    def parse(self, expression: Union[str, dict, list]) -> ExpressionNode:
-        """Parse an expression into an expression tree."""
+    def parse(self, expression: Union[str, dict, list]) -> ASTNode:
+        """Parse an expression into an AST node."""
         if isinstance(expression, str):
             return self._parse_string_expression(expression)
         elif isinstance(expression, dict):
@@ -217,17 +47,17 @@ class ExpressionParser:
         else:
             raise ValueError(f"Unsupported expression type: {type(expression)}")
     
-    def _parse_string_expression(self, expr: str) -> ExpressionNode:
+    def _parse_string_expression(self, expr: str) -> ASTNode:
         """Parse a string expression using Python AST."""
         try:
             # Use Python's AST parser for complex expressions
             tree = ast.parse(expr.strip(), mode="eval")
-            return self._ast_to_expression_node(tree.body)
+            return self._ast_to_node(tree.body)
         except SyntaxError:
             # Fall back to simple pattern matching for basic comparisons
             return self._parse_simple_comparison(expr)
     
-    def _parse_simple_comparison(self, expr: str) -> ExpressionNode:
+    def _parse_simple_comparison(self, expr: str) -> ASTNode:
         """Parse simple comparison expressions."""
         expr = expr.strip()
         
@@ -238,7 +68,7 @@ class ExpressionParser:
             arg1 = func_match.group(2).strip()
             arg2 = func_match.group(3).strip()
             
-            return FunctionCallNode(
+            return Function(
                 function_name=func_name,
                 args=[
                     self._parse_literal_or_field(arg1),
@@ -253,119 +83,107 @@ class ExpressionParser:
             op = comp_match.group(2).strip()
             value = comp_match.group(3).strip()
             
-            return ComparisonNode(
-                left=FieldNode(field),
+            return Comparison(
+                left=Field(field),
                 operator=op,
                 right=self._parse_literal_or_field(value)
             )
         
         # Default to field reference
-        return FieldNode(expr)
+        return Field(expr)
     
-    def _parse_structured_expression(self, expr_dict: dict) -> ExpressionNode:
+    def _parse_structured_expression(self, expr_dict: dict) -> ASTNode:
         """Parse structured YAML expressions (all, any, not)."""
         if "all" in expr_dict:
             children = [self.parse(child) for child in expr_dict["all"]]
-            return BooleanNode("all", children)
+            return All(*children)
         elif "any" in expr_dict:
             children = [self.parse(child) for child in expr_dict["any"]]
-            return BooleanNode("any", children)
+            return Any(*children)
         elif "not" in expr_dict:
             child = self.parse(expr_dict["not"])
-            return BooleanNode("not", [child])
+            return Not(child)
         else:
             raise ValueError(f"Unknown structured expression: {expr_dict}")
     
-    def _parse_expression_list(self, expr_list: list) -> ExpressionNode:
+    def _parse_expression_list(self, expr_list: list) -> ASTNode:
         """Parse a list of expressions as an implicit AND."""
         children = [self.parse(expr) for expr in expr_list]
-        return BooleanNode("all", children)
+        return All(*children)
     
-    def _ast_to_expression_node(self, node: ast.AST) -> ExpressionNode:
-        """Convert Python AST node to ExpressionNode."""
+    def _ast_to_node(self, node: ast.AST) -> ASTNode:
+        """Convert Python AST node to our AST node."""
         if isinstance(node, ast.BoolOp):
-            op_name = "all" if isinstance(node.op, ast.And) else "any"
-            children = [self._ast_to_expression_node(child) for child in node.values]
-            return BooleanNode(op_name, children)
+            children = [self._ast_to_node(child) for child in node.values]
+            if isinstance(node.op, ast.And):
+                return All(*children)
+            else:
+                return Any(*children)
         
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            child = self._ast_to_expression_node(node.operand)
-            return BooleanNode("not", [child])
+            child = self._ast_to_node(node.operand)
+            return Not(child)
         
         elif isinstance(node, ast.Compare):
-            left = self._ast_to_expression_node(node.left)
+            left = self._ast_to_node(node.left)
             
             # Handle chained comparisons
             current_left = left
             for op, comparator in zip(node.ops, node.comparators):
                 op_str = self._ast_op_to_string(op)
-                right = self._ast_to_expression_node(comparator)
+                right = self._ast_to_node(comparator)
                 
-                comp_node = ComparisonNode(current_left, op_str, right)
+                comp_node = Comparison(current_left, op_str, right)
                 current_left = comp_node
             
             return current_left
         
         elif isinstance(node, ast.BinOp):
-            left = self._ast_to_expression_node(node.left)
-            right = self._ast_to_expression_node(node.right)
+            left = self._ast_to_node(node.left)
+            right = self._ast_to_node(node.right)
             op_str = self._ast_op_to_string(node.op)
-            return ArithmeticNode(left, op_str, right)
+            return Arithmetic(left, op_str, right)
         
         elif isinstance(node, ast.Call):
             func_name = node.func.id if isinstance(node.func, ast.Name) else str(node.func)
-            args = [self._ast_to_expression_node(arg) for arg in node.args]
-            return FunctionCallNode(func_name, args)
+            args = [self._ast_to_node(arg) for arg in node.args]
+            return Function(func_name, args)
         
         elif isinstance(node, ast.Name):
-            return FieldNode(node.id)
+            # Check for special literals first
+            if node.id.lower() in ["null", "none"]:
+                return Literal(None)
+            elif node.id.lower() == "true":
+                return Literal(True)
+            elif node.id.lower() == "false":
+                return Literal(False)
+            else:
+                return Field(node.id)
         
         elif isinstance(node, ast.Constant):
-            return LiteralNode(node.value)
+            return Literal(node.value)
         
         elif isinstance(node, ast.List):
             # Handle list literals [1, 2, 3] or ["a", "b", "c"]
-            # For simple literals only, create a LiteralNode
             try:
                 elements = []
                 for elem in node.elts:
                     if isinstance(elem, (ast.Constant, ast.Num, ast.Str, ast.NameConstant)):
-                        elem_node = self._ast_to_expression_node(elem)
+                        elem_node = self._ast_to_node(elem)
                         elements.append(elem_node.value)
                     else:
-                        # Complex element, can't evaluate as simple literal
                         raise ValueError("Complex list element")
-                return LiteralNode(elements)
+                return Literal(elements)
             except:
-                # Fall back to error for complex lists
-                raise ValueError(f"Complex list expressions not supported in this context")
-        
-        elif isinstance(node, ast.Tuple):
-            # Handle tuple literals (1, 2, 3)
-            try:
-                elements = []
-                for elem in node.elts:
-                    if isinstance(elem, (ast.Constant, ast.Num, ast.Str, ast.NameConstant)):
-                        elem_node = self._ast_to_expression_node(elem)
-                        elements.append(elem_node.value)
-                    else:
-                        raise ValueError("Complex tuple element")
-                return LiteralNode(tuple(elements))
-            except:
-                raise ValueError(f"Complex tuple expressions not supported in this context")
-        
-        elif isinstance(node, ast.Dict):
-            # Handle dictionary literals for YAML structures { all: [...] }
-            # This is a fallback - structured YAML should be handled by _parse_structured_expression
-            raise ValueError(f"Dictionary expressions should be handled as structured YAML, not AST")
+                raise ValueError(f"Complex list expressions not supported")
         
         # Legacy Python < 3.8 support
         elif isinstance(node, ast.Num):
-            return LiteralNode(node.n)
+            return Literal(node.n)
         elif isinstance(node, ast.Str):
-            return LiteralNode(node.s)
+            return Literal(node.s)
         elif isinstance(node, ast.NameConstant):
-            return LiteralNode(node.value)
+            return Literal(node.value)
         
         else:
             raise ValueError(f"Unsupported AST node type: {type(node)}")
@@ -373,47 +191,37 @@ class ExpressionParser:
     def _ast_op_to_string(self, op: ast.operator) -> str:
         """Convert AST operator to string."""
         op_map = {
-            ast.Eq: "==",
-            ast.NotEq: "!=", 
-            ast.Lt: "<",
-            ast.LtE: "<=",
-            ast.Gt: ">",
-            ast.GtE: ">=",
-            ast.In: "in",
-            ast.NotIn: "not in",
-            ast.Add: "+",
-            ast.Sub: "-",
-            ast.Mult: "*",
-            ast.Div: "/",
-            ast.Mod: "%",
+            ast.Eq: "==", ast.NotEq: "!=", ast.Lt: "<", ast.LtE: "<=",
+            ast.Gt: ">", ast.GtE: ">=", ast.In: "in", ast.NotIn: "not in",
+            ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.Div: "/", ast.Mod: "%",
         }
         return op_map.get(type(op), str(op))
     
-    def _parse_literal_or_field(self, value: str) -> ExpressionNode:
+    def _parse_literal_or_field(self, value: str) -> ASTNode:
         """Parse a literal value or field reference."""
         value = value.strip()
         
         # Handle quoted strings
         if (value.startswith('"') and value.endswith('"')) or \
            (value.startswith("'") and value.endswith("'")):
-            return LiteralNode(value[1:-1])
+            return Literal(value[1:-1])
         
-        # Handle null
+        # Handle null (check this before field reference)
         if value.lower() in ["null", "none"]:
-            return LiteralNode(None)
+            return Literal(None)
         
         # Handle boolean
         if value.lower() == "true":
-            return LiteralNode(True)
+            return Literal(True)
         if value.lower() == "false":
-            return LiteralNode(False)
+            return Literal(False)
         
         # Handle numbers
         try:
             if "." in value:
-                return LiteralNode(float(value))
+                return Literal(float(value))
             else:
-                return LiteralNode(int(value))
+                return Literal(int(value))
         except ValueError:
             pass
         
@@ -421,28 +229,29 @@ class ExpressionParser:
         if value.startswith("[") and value.endswith("]"):
             try:
                 list_value = ast.literal_eval(value)
-                return LiteralNode(list_value)
+                return Literal(list_value)
             except (ValueError, SyntaxError):
                 pass
         
         # Default to field reference
-        return FieldNode(value)
+        return Field(value)
 
 
 # ============================================================================
 # CONVENIENCE FUNCTIONS
 # ============================================================================
 
-def parse_expression(expression: Union[str, dict, list]) -> ExpressionNode:
-    """Parse an expression into an expression tree."""
+def parse_expression(expression: Union[str, dict, list]) -> ASTNode:
+    """Parse an expression into an AST node."""
     parser = ExpressionParser()
     return parser.parse(expression)
 
 
 def evaluate_expression(expression: Union[str, dict, list], facts: Dict[str, Any]) -> bool:
-    """Parse and evaluate an expression against facts."""
-    expr_tree = parse_expression(expression)
-    result = expr_tree.evaluate(facts)
+    """Parse and evaluate an expression against facts using AST."""
+    ast_node = parse_expression(expression)
+    cache: Dict[str, bool] = {}
+    result = ast_node.evaluate(facts, cache)
     return bool(result)
 
 

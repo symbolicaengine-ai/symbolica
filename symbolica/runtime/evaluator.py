@@ -31,46 +31,39 @@ from typing import Any, Dict, Tuple, List
 from .loader import get_pack
 from .trace import TraceBuilder
 
-# Import the comprehensive expression evaluator
+# Import the unified AST system
 try:
-    from ..compiler.expressions import evaluate_expression
+    from ..compiler.expressions import parse_expression
+    from ..compiler.ast import ASTNode
 except ImportError:
     # Fallback for cases where compiler module isn't available
-    def evaluate_expression(expr: Any, facts: Dict[str, Any]) -> bool:
-        """Basic fallback expression evaluator."""
-        if isinstance(expr, str):
-            # Simple string comparison fallback
-            return bool(eval(expr, {"__builtins__": {}}, facts))
-        return bool(expr)
+    def parse_expression(expr: Any):
+        """Basic fallback."""
+        raise ImportError("Compiler module not available")
 
 
-# ------------ enhanced expression evaluation
+# ------------ AST-based expression evaluation
 def _eval_tree(node: Any, facts: Dict[str, Any], cache: Dict[str, bool]) -> bool:
     """
-    Evaluate expression tree with comprehensive expression support.
+    Evaluate expression tree using unified AST system.
     
-    Uses the new expression parser that supports:
-    - Boolean combinators (all, any, not)
-    - Comparison operators (==, !=, >, >=, <, <=)
-    - Membership operators (in, not in)
-    - String helpers (startswith, endswith, contains)
-    - Arithmetic (+, -, *, /, %, parentheses)
-    - Null checks (== null, != null)
+    Converts expressions to AST nodes and evaluates them with caching.
+    Supports all expression categories through the AST.
     """
-    # Convert expression to cache key for memoization
-    cache_key = str(node)
+    try:
+        # If it's already an AST node, evaluate directly
+        if isinstance(node, ASTNode):
+            return bool(node.evaluate(facts, cache))
+        
+        # Otherwise, parse into AST first
+        ast_node = parse_expression(node)
+        result = ast_node.evaluate(facts, cache)
+        return bool(result)
     
-    if cache_key not in cache:
-        try:
-            # Use comprehensive expression evaluator
-            result = evaluate_expression(node, facts)
-            cache[cache_key] = bool(result)
-        except Exception as e:
-            # Log error and default to False for safety
-            print(f"Expression evaluation error: {e} for expression: {node}")
-            cache[cache_key] = False
-    
-    return cache[cache_key]
+    except Exception as e:
+        # Log error and default to False for safety
+        print(f"Expression evaluation error: {e} for expression: {node}")
+        return False
 
 
 # ------------ main inference entrypoint
