@@ -14,7 +14,7 @@ Features:
 """
 
 from .parser import RuleParser, parse_yaml_file, parse_yaml_string
-from .compiler import RuleCompiler, compile_rules, compile_directory
+from .compiler import RuleCompiler, compile_rules, compile_directory, CompilationResult
 from .optimizer import RuleOptimizer, optimize_rules
 from .packager import RulePackager, create_rule_pack
 from .validator import RuleValidator, validate_rules
@@ -33,6 +33,7 @@ __all__ = [
     'RuleOptimizer',
     'RulePackager',
     'RuleValidator',
+    'CompilationResult',
     
     # Parser functions
     'parse_yaml_file',

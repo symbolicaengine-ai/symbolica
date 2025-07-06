@@ -83,4 +83,10 @@ class StandardActionExecutor(ActionExecutor):
         event_type = action.parameters.get('event')
         if event_type:
             # Could implement event emitter here
-            pass 
+            pass
+
+
+# Factory function
+def create_executor() -> StandardActionExecutor:
+    """Create standard action executor."""
+    return StandardActionExecutor() 
