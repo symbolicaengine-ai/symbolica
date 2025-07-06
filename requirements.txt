@@ -1,10 +1,11 @@
-# Core runtime
+# Core dependencies for Symbolica
 pyyaml>=6.0
-typer[all]>=0.9
 
-# Optional REST micro-service
-fastapi>=0.110
-uvicorn[standard]>=0.27
+# Optional dependencies for development
+pytest>=7.0
+pytest-cov>=4.0
+black>=22.0
+isort>=5.0
+mypy>=1.0
+ruff>=0.1.0
 
-# Type annotations (shipped)
-typing-extensions>=4.10
