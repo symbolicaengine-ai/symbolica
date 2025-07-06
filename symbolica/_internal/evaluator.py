@@ -12,6 +12,7 @@ Comprehensive AST-based expression evaluation with support for:
 
 import ast
 import hashlib
+import logging
 import re
 from typing import Dict, Any, FrozenSet, Optional, Set, Union, List
 from functools import lru_cache
@@ -21,6 +22,9 @@ from ..core import (
     Condition, ExecutionContext, ConditionEvaluator, 
     EvaluationError, condition
 )
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
 
 
 # Pre-compiled patterns for performance
@@ -47,13 +51,29 @@ class ComprehensiveConditionEvaluator(ConditionEvaluator):
     - Content-based caching for performance
     """
     
-    def __init__(self):
+    def __init__(self, max_recursion_depth: int = 50, max_function_calls: int = 100):
         # Cache for parsed expressions (content-based keys)
         self._expression_cache: Dict[str, Any] = {}
         # Cache for field extraction
         self._field_cache: Dict[str, FrozenSet[str]] = {}
         # Built-in functions
         self._functions = self._create_comprehensive_function_registry()
+        # AST node evaluators dispatch table
+        self._ast_evaluators = self._init_ast_evaluators()
+        # Comparison operators dispatch table
+        self._comparison_operators = self._init_comparison_operators()
+        # Binary operators dispatch table
+        self._binary_operators = self._init_binary_operators()
+        
+        # Security settings
+        self._max_recursion_depth = max_recursion_depth
+        self._max_function_calls = max_function_calls
+        self._current_recursion_depth = 0
+        self._current_function_calls = 0
+        self._allowed_function_names = set(self._functions.keys())
+        
+        logger.debug(f"Initialized evaluator with max_recursion_depth={max_recursion_depth}, "
+                    f"max_function_calls={max_function_calls}")
     
     def evaluate(self, condition: Condition, context: ExecutionContext) -> bool:
         """
@@ -66,6 +86,9 @@ class ComprehensiveConditionEvaluator(ConditionEvaluator):
         # Check context cache first
         if cache_key in context.enriched_facts:
             return context.enriched_facts[cache_key]
+        
+        # Reset security counters for each evaluation
+        self._reset_security_counters()
         
         try:
             # Parse expression (handles both string and structured formats)
@@ -262,41 +285,67 @@ class ComprehensiveConditionEvaluator(ConditionEvaluator):
             return False
     
     def _evaluate_ast_node(self, node: ast.AST, facts: Dict[str, Any]) -> Any:
-        """Evaluate AST node with comprehensive support."""
+        """Evaluate AST node using dispatch pattern for reduced complexity."""
         
-        if isinstance(node, ast.BoolOp):
-            return self._evaluate_bool_op(node, facts)
+        # Security check: recursion depth limit
+        self._current_recursion_depth += 1
+        if self._current_recursion_depth > self._max_recursion_depth:
+            raise EvaluationError(
+                f"Maximum recursion depth exceeded: {self._max_recursion_depth}. "
+                "Expression may be too complex or contain circular references."
+            )
         
-        elif isinstance(node, ast.UnaryOp):
-            return self._evaluate_unary_op(node, facts)
-        
-        elif isinstance(node, ast.Compare):
-            return self._evaluate_compare(node, facts)
-        
-        elif isinstance(node, ast.BinOp):
-            return self._evaluate_bin_op(node, facts)
-        
-        elif isinstance(node, ast.Call):
-            return self._evaluate_call(node, facts)
-        
-        elif isinstance(node, ast.Name):
-            return facts.get(node.id)
-        
-        elif isinstance(node, ast.Constant):
-            return node.value
-        
-        # Legacy Python < 3.8 support
-        elif isinstance(node, ast.Num):
-            return node.n
-        elif isinstance(node, ast.Str):
-            return node.s
-        elif isinstance(node, ast.NameConstant):
-            return node.value
-        elif isinstance(node, ast.List):
-            return [self._evaluate_ast_node(elem, facts) for elem in node.elts]
-        
-        else:
-            raise EvaluationError(f"Unsupported AST node type: {type(node)}")
+        try:
+            # Use dispatch pattern to reduce cyclomatic complexity
+            node_type = type(node)
+            
+            if node_type in self._ast_evaluators:
+                return self._ast_evaluators[node_type](node, facts)
+            else:
+                raise EvaluationError(f"Unsupported AST node type: {node_type}")
+        finally:
+            self._current_recursion_depth -= 1
+    
+    def _init_ast_evaluators(self) -> Dict[type, callable]:
+        """Initialize AST node evaluators dispatch table."""
+        return {
+            ast.BoolOp: self._evaluate_bool_op,
+            ast.UnaryOp: self._evaluate_unary_op,
+            ast.Compare: self._evaluate_compare,
+            ast.BinOp: self._evaluate_bin_op,
+            ast.Call: self._evaluate_call,
+            ast.Name: self._evaluate_name,
+            ast.Constant: self._evaluate_constant,
+            ast.List: self._evaluate_list,
+            # Legacy Python < 3.8 support
+            ast.Num: self._evaluate_num,
+            ast.Str: self._evaluate_str,
+            ast.NameConstant: self._evaluate_name_constant,
+        }
+    
+    def _evaluate_name(self, node: ast.Name, facts: Dict[str, Any]) -> Any:
+        """Evaluate name node."""
+        return facts.get(node.id)
+    
+    def _evaluate_constant(self, node: ast.Constant, facts: Dict[str, Any]) -> Any:
+        """Evaluate constant node."""
+        return node.value
+    
+    def _evaluate_list(self, node: ast.List, facts: Dict[str, Any]) -> List[Any]:
+        """Evaluate list node."""
+        return [self._evaluate_ast_node(elem, facts) for elem in node.elts]
+    
+    def _evaluate_num(self, node: ast.Num, facts: Dict[str, Any]) -> Any:
+        """Evaluate number node (legacy Python < 3.8)."""
+        return node.n
+    
+    def _evaluate_str(self, node: ast.Str, facts: Dict[str, Any]) -> Any:
+        """Evaluate string node (legacy Python < 3.8)."""
+        return node.s
+    
+    def _evaluate_name_constant(self, node: ast.NameConstant, facts: Dict[str, Any]) -> Any:
+        """Evaluate name constant node (legacy Python < 3.8)."""
+        return node.value
     
     def _evaluate_bool_op(self, node: ast.BoolOp, facts: Dict[str, Any]) -> bool:
         """Evaluate boolean operation with short-circuiting."""
@@ -342,64 +391,78 @@ class ComprehensiveConditionEvaluator(ConditionEvaluator):
         return True
     
     def _compare_values(self, left: Any, op: ast.cmpop, right: Any) -> bool:
-        """Compare two values with safe handling."""
+        """Compare two values using dispatch pattern."""
         try:
-            if isinstance(op, ast.Eq):
-                return left == right
-            elif isinstance(op, ast.NotEq):
-                return left != right
-            elif isinstance(op, ast.Lt):
-                return left < right
-            elif isinstance(op, ast.LtE):
-                return left <= right
-            elif isinstance(op, ast.Gt):
-                return left > right
-            elif isinstance(op, ast.GtE):
-                return left >= right
-            elif isinstance(op, ast.In):
-                return left in right if right is not None else False
-            elif isinstance(op, ast.NotIn):
-                return left not in right if right is not None else True
-            elif isinstance(op, ast.Is):
-                return left is right
-            elif isinstance(op, ast.IsNot):
-                return left is not right
+            op_type = type(op)
+            if op_type in self._comparison_operators:
+                return self._comparison_operators[op_type](left, right)
             else:
-                raise EvaluationError(f"Unsupported comparison operator: {type(op)}")
+                raise EvaluationError(f"Unsupported comparison operator: {op_type}")
         
         except (TypeError, ValueError):
             # Incompatible types for comparison
             return False
     
+    def _init_comparison_operators(self) -> Dict[type, callable]:
+        """Initialize comparison operators dispatch table."""
+        return {
+            ast.Eq: lambda left, right: left == right,
+            ast.NotEq: lambda left, right: left != right,
+            ast.Lt: lambda left, right: left < right,
+            ast.LtE: lambda left, right: left <= right,
+            ast.Gt: lambda left, right: left > right,
+            ast.GtE: lambda left, right: left >= right,
+            ast.In: lambda left, right: left in right if right is not None else False,
+            ast.NotIn: lambda left, right: left not in right if right is not None else True,
+            ast.Is: lambda left, right: left is right,
+            ast.IsNot: lambda left, right: left is not right,
+        }
+    
     def _evaluate_bin_op(self, node: ast.BinOp, facts: Dict[str, Any]) -> Any:
-        """Evaluate binary operation safely."""
+        """Evaluate binary operation using dispatch pattern."""
         left = self._evaluate_ast_node(node.left, facts)
         right = self._evaluate_ast_node(node.right, facts)
         
         try:
-            if isinstance(node.op, ast.Add):
-                return left + right
-            elif isinstance(node.op, ast.Sub):
-                return left - right
-            elif isinstance(node.op, ast.Mult):
-                return left * right
-            elif isinstance(node.op, ast.Div):
-                return left / right if right != 0 else float('inf')
-            elif isinstance(node.op, ast.FloorDiv):
-                return left // right if right != 0 else float('inf')
-            elif isinstance(node.op, ast.Mod):
-                return left % right if right != 0 else 0
-            elif isinstance(node.op, ast.Pow):
-                return left ** right
+            op_type = type(node.op)
+            if op_type in self._binary_operators:
+                return self._binary_operators[op_type](left, right)
             else:
-                raise EvaluationError(f"Unsupported binary operator: {type(node.op)}")
+                raise EvaluationError(f"Unsupported binary operator: {op_type}")
         
         except (TypeError, ValueError, ZeroDivisionError):
             return None
     
+    def _init_binary_operators(self) -> Dict[type, callable]:
+        """Initialize binary operators dispatch table."""
+        return {
+            ast.Add: lambda left, right: left + right,
+            ast.Sub: lambda left, right: left - right,
+            ast.Mult: lambda left, right: left * right,
+            ast.Div: lambda left, right: left / right if right != 0 else float('inf'),
+            ast.FloorDiv: lambda left, right: left // right if right != 0 else float('inf'),
+            ast.Mod: lambda left, right: left % right if right != 0 else 0,
+            ast.Pow: lambda left, right: left ** right,
+        }
+    
     def _evaluate_call(self, node: ast.Call, facts: Dict[str, Any]) -> Any:
-        """Evaluate function call safely."""
+        """Evaluate function call with security checks."""
         func_name = node.func.id if isinstance(node.func, ast.Name) else str(node.func)
+        
+        # Security check: function call limit
+        self._current_function_calls += 1
+        if self._current_function_calls > self._max_function_calls:
+            raise EvaluationError(
+                f"Maximum function calls exceeded: {self._max_function_calls}. "
+                "Expression may contain excessive computation or loops."
+            )
+        
+        # Security check: whitelist allowed functions
+        if func_name not in self._allowed_function_names:
+            raise EvaluationError(
+                f"Function '{func_name}' is not allowed. "
+                f"Allowed functions: {sorted(self._allowed_function_names)}"
+            )
         
         if func_name not in self._functions:
             raise EvaluationError(f"Unknown function: {func_name}")
@@ -500,14 +563,57 @@ class ComprehensiveConditionEvaluator(ConditionEvaluator):
         }
     
     def register_function(self, name: str, func: callable) -> None:
-        """Register custom function."""
+        """Register custom function with security validation."""
+        # Security check: validate function name
+        if not isinstance(name, str) or not name.isidentifier():
+            raise ValueError(f"Invalid function name: {name}")
+        
+        if name in RESERVED_WORDS:
+            raise ValueError(f"Function name '{name}' is reserved")
+        
+        # Security check: validate function
+        if not callable(func):
+            raise ValueError(f"Function '{name}' is not callable")
+        
+        # Add to registries
         self._functions[name] = func
+        self._allowed_function_names.add(name)
+        
+        logger.debug(f"Registered custom function: {name}")
+    
+    def _reset_security_counters(self) -> None:
+        """Reset security counters for new evaluation."""
+        self._current_recursion_depth = 0
+        self._current_function_calls = 0
+    
+    def get_security_limits(self) -> Dict[str, int]:
+        """Get current security limits."""
+        return {
+            "max_recursion_depth": self._max_recursion_depth,
+            "max_function_calls": self._max_function_calls,
+            "allowed_functions_count": len(self._allowed_function_names)
+        }
+    
+    def update_security_limits(self, max_recursion_depth: int = None, 
+                              max_function_calls: int = None) -> None:
+        """Update security limits."""
+        if max_recursion_depth is not None:
+            self._max_recursion_depth = max_recursion_depth
+        if max_function_calls is not None:
+            self._max_function_calls = max_function_calls
+        
+        logger.debug(f"Updated security limits: recursion={self._max_recursion_depth}, "
+                    f"function_calls={self._max_function_calls}")
 
 
 # Factory function - use comprehensive evaluator by default
-def create_evaluator() -> ComprehensiveConditionEvaluator:
-    """Create comprehensive condition evaluator."""
-    return ComprehensiveConditionEvaluator()
+def create_evaluator(max_recursion_depth: int = 50, 
+                    max_function_calls: int = 100) -> ComprehensiveConditionEvaluator:
+    """Create comprehensive condition evaluator with security limits."""
+    return ComprehensiveConditionEvaluator(
+        max_recursion_depth=max_recursion_depth,
+        max_function_calls=max_function_calls
+    )
 
 
 # Legacy alias for backward compatibility
