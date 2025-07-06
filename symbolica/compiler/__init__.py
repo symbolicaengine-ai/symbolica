@@ -35,7 +35,7 @@ from .ast import (
 )
 from .optimiser import optimise
 from .packager import build_pack
-from .expressions import (
+from .ast import (
     ExpressionParser, 
     parse_expression, 
     evaluate_expression
@@ -44,6 +44,16 @@ from .schema import (
     ValidationResult,
     validate_rule_document,
     get_schema_info
+)
+from .dag import (
+    build_execution_dag,
+    visualize_execution_dag,
+    ExecutionDAG,
+    build_rule_dag,  # Legacy compatibility
+    visualize_dag,   # Legacy compatibility 
+    RuleNode,
+    FieldNode,
+    Conflict
 )
 
 # New extensible architecture
@@ -60,13 +70,15 @@ from .stages import (
     OptimizationStage,
     PackagingStage,
     create_default_compiler,
-    create_strict_compiler
+    create_strict_compiler,
+    create_legacy_compiler
 )
 
 __all__ = [
     # High-level compiler builders
     "create_default_compiler",
     "create_strict_compiler",
+    "create_legacy_compiler",
     
     # Extensible architecture
     "Compiler",
@@ -101,6 +113,18 @@ __all__ = [
     # Data types
     "RawRule",
     "LintResult",
+    
+    # DAG analysis
+    "build_execution_dag",
+    "visualize_execution_dag",
+    "ExecutionDAG",
+    "RuleNode",
+    "FieldNode",
+    "Conflict",
+    
+    # Legacy DAG compatibility
+    "build_rule_dag",
+    "visualize_dag",
 ]
 
 

@@ -1,12 +1,11 @@
 """
-Symbolica command-line interface.
+Symbolica command-line interface with DAG support.
 
-$ python -m symbolica.cli lint           # YAML lint
-$ python -m symbolica.cli test           # unit / dataset test
-$ python -m symbolica.cli compile        # build rulepack.rpack
-$ python -m symbolica.cli run            # local REST server
-$ python -m symbolica.cli infer          # one-shot inference
-$ python -m symbolica.cli trace          # pretty-print saved trace
+Examples:
+    $ python -m symbolica.cli compile        # build rulepack.rpack (legacy or DAG)
+    $ python -m symbolica.cli compile-dag    # build rulepack with DAG features
+    $ python -m symbolica.cli pack-info      # inspect rulepack metadata
+    $ python -m symbolica.cli dag rules/     # show DAG analysis for folder
 """
 from __future__ import annotations
 
@@ -18,7 +17,13 @@ from typing import Optional
 
 from symbolica.compiler import lint as lint_mod
 from symbolica.compiler import packager
+from symbolica.compiler import (
+    create_default_compiler, 
+    create_legacy_compiler
+)
+from symbolica.compiler.dag import build_execution_dag, visualize_execution_dag
 from symbolica.runtime import loader, evaluator, api as rest_api
+from symbolica.runtime.loader import load_pack
 
 CLI = typer.Typer(add_help_option=True, pretty_exceptions_enable=False)
 
@@ -39,14 +44,34 @@ def lint(
 
 
 # ───────────────────────────────────────────────────────────── compile
-@CLI.command()
-def compile(
-    rules: str = typer.Option("symbolica_rules"),
-    output: str = typer.Option("rulepack.rpack"),
-) -> None:
-    "Compile YAML → .rpack."
-    packager.build_pack(rules_dir=rules, output_path=output)
-    typer.secho(f"✔ rulepack written to {output}", fg=typer.colors.GREEN)
+@CLI.command("compile")
+def compile_rules(
+    rules_path: str = typer.Argument(..., help="Path to YAML rules file/folder"),
+    output: str = typer.Option("rulepack.rpack", help="Output .rpack filename"),
+    enable_dag: bool = typer.Option(True, help="Enable DAG features (default) or use legacy mode")
+):
+    """Compile YAML rules → .rpack file."""
+    
+    if enable_dag:
+        compiler = create_default_compiler()
+        typer.secho(f"✔ DAG-enabled rulepack written to {output}", fg=typer.colors.GREEN)
+    else:
+        compiler = create_legacy_compiler()
+        typer.secho(f"✔ Legacy rulepack written to {output}", fg=typer.colors.GREEN)
+    
+    compiler.compile_file_or_directory(rules_path, output)
+
+
+# ─────────────────────────────────────────────────────────── compile-dag
+@CLI.command("compile-dag")
+def compile_dag_rules(
+    rules_path: str = typer.Argument(..., help="Path to YAML rules file/folder"),
+    output: str = typer.Option("rulepack.rpack", help="Output .rpack filename")
+):
+    """Compile YAML → .rpack with DAG features."""
+    compiler = create_default_compiler()
+    compiler.compile_file_or_directory(rules_path, output)
+    typer.secho(f"✔ DAG-enabled rulepack written to {output}", fg=typer.colors.GREEN)
 
 
 # ───────────────────────────────────────────────────────────── run
@@ -101,6 +126,151 @@ def trace(
             print(json.dumps(obj, indent=2))
         else:
             print(obj.get("final") or obj)
+
+
+# ───────────────────────────────────────────────────────────── dag
+@CLI.command()
+def dag(
+    rules: str = typer.Option("symbolica_rules", help="Folder containing YAML rule files"),
+    format: str = typer.Option("layers", help="Output format: layers, summary"),
+    output: Optional[str] = typer.Option(None, help="Output file (default: stdout)"),
+) -> None:
+    "Analyze and visualize rule execution DAG with parallel layers."
+    try:
+        from symbolica.compiler.dag import build_execution_dag, visualize_execution_dag
+        from symbolica.compiler.parser import parse_yaml_file
+        import pathlib as path_lib
+        
+        # Load all rules
+        rules_list = []
+        rules_dir = path_lib.Path(rules)
+        
+        if not rules_dir.exists():
+            typer.secho(f"Rules directory not found: {rules}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        
+        for yaml_file in rules_dir.rglob("*.yaml"):
+            if yaml_file.name.endswith(".reg.yaml"):
+                continue  # Skip registry files
+            try:
+                parsed_rules = parse_yaml_file(yaml_file)
+                for raw_rule in parsed_rules:
+                    rule_dict = {
+                        "id": raw_rule["id"],
+                        "priority": raw_rule["priority"],
+                        "if": raw_rule["if_"],
+                        "then": raw_rule["then"],
+                        "tags": raw_rule["tags"]
+                    }
+                    rules_list.append(rule_dict)
+            except Exception as e:
+                typer.secho(f"Error parsing {yaml_file}: {e}", fg=typer.colors.YELLOW)
+                continue
+        
+        if not rules_list:
+            typer.secho("No rules found to analyze", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        
+        # Build ExecutionDAG
+        execution_dag = build_execution_dag(rules_list)
+        
+        # Generate visualization  
+        result = visualize_execution_dag(execution_dag, format)
+        
+        if output:
+            pathlib.Path(output).write_text(result)
+            typer.secho(f"DAG visualization written to {output}", fg=typer.colors.GREEN)
+        else:
+            typer.echo(result)
+        
+        # Print summary to stderr
+        parallel_rules = sum(len(layer.rules) for layer in execution_dag.execution_layers if len(layer.rules) > 1)
+        resolvable_conflicts = sum(1 for c in execution_dag.conflicts if c.resolvable)
+        unresolvable_conflicts = len(execution_dag.conflicts) - resolvable_conflicts
+        
+        summary_lines = [
+            f"Analyzed {len(execution_dag.rules)} rules in {len(execution_dag.execution_layers)} layers",
+            f"Parallel opportunities: {parallel_rules} rules",
+            f"Conflicts: {resolvable_conflicts} resolvable, {unresolvable_conflicts} unresolvable"
+        ]
+        
+        for line in summary_lines:
+            typer.secho(line, fg=typer.colors.BLUE, err=True)
+            
+    except ImportError as e:
+        typer.secho(f"DAG analysis not available: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.secho(f"Error analyzing DAG: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+# ───────────────────────────────────────────────────────────── dag-info
+@CLI.command("dag-info")
+def dag_info(
+    rpack: str = typer.Option("rulepack.rpack", help="Path to .rpack file"),
+) -> None:
+    "Show execution DAG information from compiled .rpack file."
+    try:
+        pack_info = packager.get_pack_info(rpack)
+        
+        typer.echo(f"Pack: {pack_info['path']}")
+        typer.echo(f"Version: {pack_info['version']}")
+        typer.echo(f"Rules: {pack_info['rule_count']}")
+        typer.echo(f"DAG Enabled: {pack_info['dag_enabled']}")
+        
+        if pack_info.get('dag_info'):
+            dag_info = pack_info['dag_info']
+            typer.echo(f"\nDAG Information:")
+            typer.echo(f"  Execution Layers: {dag_info['execution_layers']}")
+            typer.echo(f"  Parallel Opportunities: {dag_info['parallel_opportunities']}")
+            typer.echo(f"  Input Fields: {dag_info['input_fields']}")
+            typer.echo(f"  Output Fields: {dag_info['output_fields']}")
+            typer.echo(f"  Conflicts: {dag_info['conflicts']}")
+        else:
+            typer.secho("No DAG information available (legacy pack)", fg=typer.colors.YELLOW)
+        
+    except Exception as e:
+        typer.secho(f"Error reading DAG info: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+# ───────────────────────────────────────────────────────────── pack-info
+@CLI.command("pack-info")  
+def pack_info(
+    rpack: str = typer.Option("rulepack.rpack", help="Path to .rpack file"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
+) -> None:
+    "Inspect compiled .rpack file details."
+    try:
+        info = packager.get_pack_info(rpack)
+        
+        typer.echo("Pack Information:")
+        typer.echo("=" * 20)
+        typer.echo(f"Path: {info['path']}")
+        typer.echo(f"Version: {info['version']}")
+        typer.echo(f"Built: {info['built']}")
+        typer.echo(f"Rules: {info['rule_count']}")
+        typer.echo(f"File Size: {info['file_size']} bytes")
+        typer.echo(f"Agents: {', '.join(info['agents']) if info['agents'] else 'None'}")
+        typer.echo(f"DAG Enabled: {info['dag_enabled']}")
+        
+        if info.get('dag_info'):
+            dag_info = info['dag_info']
+            typer.echo(f"\nDAG Details:")
+            typer.echo(f"  Execution Layers: {dag_info['execution_layers']}")
+            typer.echo(f"  Parallel Rules: {dag_info['parallel_opportunities']}")
+            typer.echo(f"  Input Fields: {dag_info['input_fields']}")
+            typer.echo(f"  Output Fields: {dag_info['output_fields']}")
+            typer.echo(f"  Conflicts: {dag_info['conflicts']}")
+        
+        if verbose:
+            typer.echo(f"\nRaw data:")
+            typer.echo(json.dumps(info, indent=2))
+        
+    except Exception as e:
+        typer.secho(f"Error reading pack info: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
 
 # ───────────────────────────────────────────────────────────── test (stub)

@@ -113,7 +113,7 @@ def validate_rule_document(doc: Dict[str, Any], file_path: str = "document") -> 
 def get_schema_info() -> Dict[str, Any]:
     """Get basic information about the rule schema."""
     return {
-        "version": "1.0",
+        "version": "legacy",
         "required_fields": ["id", "conditions", "actions"],
         "optional_fields": ["priority", "tags", "description"],
         "validation": "basic_contract_enforcement"

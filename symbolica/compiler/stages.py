@@ -15,6 +15,7 @@ from .parser import parse_yaml_file
 from .lint import lint_folder
 from .packager import build_pack
 from .optimiser import optimise
+from .dag import build_execution_dag
 
 
 class ValidationStage(CompilerStage):
@@ -78,13 +79,14 @@ class ParsingStage(CompilerStage):
 
 
 class OptimizationStage(CompilerStage):
-    """Stage that optimizes rules for runtime performance."""
+    """Stage that optimizes rules for runtime performance using DAG."""
     
-    def __init__(self):
+    def __init__(self, enable_dag: bool = True):
         super().__init__("Optimization")
+        self.enable_dag = enable_dag
     
     def process(self, context: CompilationContext) -> bool:
-        """Optimize rules for runtime execution."""
+        """Optimize rules for runtime execution using DAG analysis."""
         try:
             raw_rules = context.stats.get('raw_rules', [])
             if not raw_rules:
@@ -104,14 +106,33 @@ class OptimizationStage(CompilerStage):
                 }
                 rule_dicts.append(rule_dict)
             
-            # Run optimization
-            sorted_rules, predicate_index = optimise(rule_dicts)
+            if self.enable_dag:
+                # Build ExecutionDAG with enhanced features
+                try:
+                    execution_dag = build_execution_dag(rule_dicts)
+                    context.stats['execution_dag'] = execution_dag
+                    context.stats['dag_optimization_enabled'] = True
+                    
+                    # Also provide legacy format for backward compatibility
+                    sorted_rules, predicate_index = optimise(rule_dicts)
+                    context.stats['optimized_rules'] = sorted_rules
+                    context.stats['predicate_index'] = predicate_index
+                    
+                except Exception as e:
+                    self.add_warning(context, f"DAG optimization failed, falling back to legacy: {e}")
+                    # Fallback to legacy optimization
+                    sorted_rules, predicate_index = optimise(rule_dicts)
+                    context.stats['optimized_rules'] = sorted_rules
+                    context.stats['predicate_index'] = predicate_index
+                    context.stats['dag_optimization_enabled'] = False
+            else:
+                # Legacy optimization only
+                sorted_rules, predicate_index = optimise(rule_dicts)
+                context.stats['optimized_rules'] = sorted_rules
+                context.stats['predicate_index'] = predicate_index
+                context.stats['dag_optimization_enabled'] = False
             
-            # Store optimized results
-            context.stats['optimized_rules'] = sorted_rules
-            context.stats['predicate_index'] = predicate_index
             context.stats['optimization_passed'] = True
-            
             return True
             
         except Exception as e:
@@ -120,28 +141,43 @@ class OptimizationStage(CompilerStage):
 
 
 class PackagingStage(CompilerStage):
-    """Stage that packages optimized rules into .rpack file."""
+    """Stage that packages optimized rules into .rpack file with DAG support."""
     
-    def __init__(self, status_precedence: List[str] = None):
+    def __init__(self, status_precedence: List[str] = None, enable_dag: bool = True):
         super().__init__("Packaging")
         self.status_precedence = status_precedence
+        self.enable_dag = enable_dag
     
     def process(self, context: CompilationContext) -> bool:
-        """Package optimized rules into binary format."""
+        """Package optimized rules into binary format with DAG support."""
         try:
             optimized_rules = context.stats.get('optimized_rules')
             predicate_index = context.stats.get('predicate_index')
+            execution_dag = context.stats.get('execution_dag')
+            dag_enabled = context.stats.get('dag_optimization_enabled', False)
             
             if optimized_rules is None or predicate_index is None:
                 self.add_error(context, "No optimized rules available for packaging")
                 return False
             
-            # Use the existing build_pack function
-            build_pack(
-                rules_dir=context.rules_dir,
-                output_path=context.output_path,
-                status_precedence=self.status_precedence
-            )
+            # Use DAG-aware packaging
+            if self.enable_dag and dag_enabled and execution_dag:
+                from .packager import build_pack_dag
+                build_pack_dag(
+                    rules_dir=context.rules_dir,
+                    output_path=context.output_path,
+                    status_precedence=self.status_precedence
+                )
+                context.stats['version'] = "dag"
+            else:
+                # Fallback to legacy packaging
+                from .packager import build_pack_legacy
+                build_pack_legacy(
+                    rules_dir=context.rules_dir,
+                    output_path=context.output_path,
+                    status_precedence=self.status_precedence
+                )
+                context.stats['version'] = "legacy"
             
             # Verify output was created
             if not context.output_path.exists():
@@ -159,22 +195,33 @@ class PackagingStage(CompilerStage):
 
 
 def create_default_compiler():
-    """Create a compiler with the standard pipeline stages."""
+    """Create a compiler with the standard pipeline stages (DAG-enabled)."""
     from .base import Compiler
     
     return (Compiler()
             .add_stage(ValidationStage(strict=False))
             .add_stage(ParsingStage()) 
-            .add_stage(OptimizationStage())
-            .add_stage(PackagingStage()))
+            .add_stage(OptimizationStage(enable_dag=True))
+            .add_stage(PackagingStage(enable_dag=True)))
 
 
 def create_strict_compiler():
-    """Create a compiler with strict validation."""
+    """Create a compiler with strict validation (DAG-enabled)."""
     from .base import Compiler
     
     return (Compiler()
             .add_stage(ValidationStage(strict=True))
             .add_stage(ParsingStage())
-            .add_stage(OptimizationStage()) 
-            .add_stage(PackagingStage())) 
+            .add_stage(OptimizationStage(enable_dag=True)) 
+            .add_stage(PackagingStage(enable_dag=True)))
+
+
+def create_legacy_compiler():
+    """Create a compiler with legacy pipeline (no DAG)."""
+    from .base import Compiler
+    
+    return (Compiler()
+            .add_stage(ValidationStage(strict=False))
+            .add_stage(ParsingStage())
+            .add_stage(OptimizationStage(enable_dag=False)) 
+            .add_stage(PackagingStage(enable_dag=False))) 
