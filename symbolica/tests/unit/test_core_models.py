@@ -10,7 +10,7 @@ from typing import Dict, Any
 
 from symbolica.core import (
     Rule, Facts, ExecutionContext, ExecutionResult, 
-    TraceLevel, facts, SymbolicaError, ValidationError
+    facts, SymbolicaError, ValidationError
 )
 
 
@@ -233,8 +233,8 @@ class TestExecutionContext:
         )
         
         # Fire some rules
-        context.rule_fired('rule1')
-        context.rule_fired('rule2')
+        context.rule_fired('rule1', 'Some reason')
+        context.rule_fired('rule2', 'Another reason')
         
         assert context.fired_rules == ['rule1', 'rule2']
         
@@ -260,32 +260,26 @@ class TestExecutionResult:
             verdict=verdict,
             fired_rules=fired_rules,
             execution_time_ms=25.5,
-            trace={}
+            reasoning="Rules fired based on conditions"
         )
         
         assert result.verdict == verdict
         assert result.fired_rules == fired_rules
         assert result.execution_time_ms == 25.5
-        assert result.trace == {}  # Default empty
+        assert result.reasoning == "Rules fired based on conditions"
     
     @pytest.mark.unit
-    def test_execution_result_with_trace(self):
-        """Test execution result with trace data."""
-        trace_data = {
-            'rules_evaluated': 5,
-            'rules_fired': 2,
-            'execution_order': ['rule1', 'rule2']
-        }
-        
+    def test_execution_result_with_reasoning(self):
+        """Test execution result with reasoning text."""
         result = ExecutionResult(
             verdict={'approved': True},
             fired_rules=['rule1', 'rule2'],
             execution_time_ms=15.0,
-            trace=trace_data
+            reasoning="✓ rule1: condition was met\n✓ rule2: criteria satisfied"
         )
         
-        assert result.trace == trace_data
-        assert result.trace['rules_evaluated'] == 5
+        assert "rule1: condition was met" in result.reasoning
+        assert "rule2: criteria satisfied" in result.reasoning
     
     @pytest.mark.unit
     def test_execution_result_immutability(self):
@@ -294,7 +288,7 @@ class TestExecutionResult:
             verdict={'tier': 'premium'},
             fired_rules=['rule1'],
             execution_time_ms=10.0,
-            trace={}
+            reasoning="Simple reasoning"
         )
         
         # Should not be able to modify result attributes
@@ -305,24 +299,7 @@ class TestExecutionResult:
             result.fired_rules = []
 
 
-class TestTraceLevel:
-    """Test the TraceLevel enum."""
-    
-    @pytest.mark.unit
-    def test_trace_level_values(self):
-        """Test trace level enum values."""
-        assert TraceLevel.NONE.value == "none"
-        assert TraceLevel.BASIC.value == "basic"
-        assert TraceLevel.DETAILED.value == "detailed"
-    
-    @pytest.mark.unit
-    def test_trace_level_comparison(self):
-        """Test trace level comparison."""
-        assert TraceLevel.NONE != TraceLevel.BASIC
-        assert TraceLevel.BASIC != TraceLevel.DETAILED
-        
-        # String comparison
-        assert TraceLevel.BASIC.value == "basic"
+
 
 
 class TestFactsConvenienceFunction:
