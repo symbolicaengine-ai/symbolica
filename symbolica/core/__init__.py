@@ -1,46 +1,28 @@
 """
-Symbolica Core
-==============
+Symbolica Core Package
+=====================
 
-Core domain models, interfaces, and exceptions.
-This is the foundation layer - no external dependencies.
+Core domain models and engine for deterministic AI agent reasoning.
 """
 
-# Domain models
-from .models import (
-    RuleId, Priority, Condition, Action, Rule, Facts, 
-    ExecutionResult, ExecutionContext, RuleSet, TraceLevel,
-    # Factory functions
-    rule_id, priority, condition, action_set, action_call, facts
-)
-
-# Interfaces (only where needed for extensibility)
-from .interfaces import (
-    ConditionEvaluator, ActionExecutor, ExecutionStrategy,
-    Cache, Tracer, RuleLoader, FunctionRegistry
-)
-
-# Exceptions
-from .exceptions import (
-    SymbolicaError, ValidationError, CompilationError, 
-    ExecutionError, EvaluationError, ActionExecutionError,
-    LoadError, CacheError, ConfigurationError
-)
+from .models import Rule, Facts, ExecutionContext, ExecutionResult, facts
+from .engine import Engine
+from .exceptions import SymbolicaError, ValidationError, EvaluationError
+from .interfaces import ConditionEvaluator, ActionExecutor, ExecutionStrategy
 
 __all__ = [
-    # Domain models
-    "RuleId", "Priority", "Condition", "Action", "Rule", "Facts",
-    "ExecutionResult", "ExecutionContext", "RuleSet", "TraceLevel",
+    # Core models
+    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
     
-    # Factory functions
-    "rule_id", "priority", "condition", "action_set", "action_call", "facts",
-    
-    # Interfaces
-    "ConditionEvaluator", "ActionExecutor", "ExecutionStrategy",
-    "Cache", "Tracer", "RuleLoader", "FunctionRegistry",
+    # Engine
+    'Engine',
     
     # Exceptions
-    "SymbolicaError", "ValidationError", "CompilationError",
-    "ExecutionError", "EvaluationError", "ActionExecutionError", 
-    "LoadError", "CacheError", "ConfigurationError",
+    'SymbolicaError', 'ValidationError', 'EvaluationError',
+    
+    # Interfaces
+    'ConditionEvaluator', 'ActionExecutor', 'ExecutionStrategy',
+    
+    # Factories
+    'facts'
 ] 
