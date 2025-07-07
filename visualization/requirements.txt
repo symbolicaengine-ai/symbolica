@@ -1,0 +1,17 @@
+# Optional dependencies for enhanced visualization features
+# Install with: pip install -r requirements.txt
+
+# For generating visual dependency graphs (optional)
+graphviz>=0.20.0
+
+# For enhanced web-based visualizations (optional) 
+plotly>=5.0.0
+
+# For generating static plots (optional)
+matplotlib>=3.5.0
+
+# Note: The core visualization functionality works without these dependencies
+# They are only needed for advanced features like:
+# - Graphviz DOT file rendering to PNG/SVG
+# - Interactive web-based dependency graphs  
+# - Statistical plots and charts 

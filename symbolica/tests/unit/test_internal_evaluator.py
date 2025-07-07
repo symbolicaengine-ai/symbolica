@@ -9,7 +9,7 @@ import pytest
 from typing import Dict, Any
 
 from symbolica.core import ExecutionContext, facts, EvaluationError
-from symbolica._internal.evaluator import create_evaluator
+from symbolica._internal.evaluator import ASTEvaluator
 
 
 class TestASTEvaluator:
@@ -18,7 +18,7 @@ class TestASTEvaluator:
     @pytest.fixture
     def evaluator(self):
         """Create evaluator instance."""
-        return create_evaluator()
+        return ASTEvaluator()
     
     @pytest.fixture
     def context(self, sample_facts):
@@ -316,16 +316,14 @@ class TestEvaluatorFactory:
     
     @pytest.mark.unit
     def test_create_evaluator(self):
-        """Test evaluator factory function."""
-        from symbolica._internal.evaluator import ASTEvaluator
-        
-        evaluator = create_evaluator()
+        """Test evaluator direct instantiation."""
+        evaluator = ASTEvaluator()
         assert isinstance(evaluator, ASTEvaluator)
     
     @pytest.mark.unit
     def test_evaluator_methods(self):
         """Test that evaluator has required methods."""
-        evaluator = create_evaluator()
+        evaluator = ASTEvaluator()
         
         assert hasattr(evaluator, 'evaluate')
         assert hasattr(evaluator, 'extract_fields')
@@ -335,6 +333,11 @@ class TestEvaluatorFactory:
 
 class TestExpressionTestCases:
     """Test expression evaluation using parametrized test cases from conftest."""
+    
+    @pytest.fixture
+    def evaluator(self):
+        """Create evaluator instance."""
+        return ASTEvaluator()
     
     @pytest.mark.unit 
     def test_expression_cases(self, evaluator, expression_test_facts):
@@ -360,6 +363,11 @@ class TestExpressionTestCases:
 
 class TestErrorTestCases:
     """Test error handling using error test cases from conftest."""
+    
+    @pytest.fixture
+    def evaluator(self):
+        """Create evaluator instance."""
+        return ASTEvaluator()
     
     @pytest.mark.unit
     def test_error_cases(self, evaluator):

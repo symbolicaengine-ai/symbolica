@@ -8,9 +8,7 @@ Optimized for deterministic execution and LLM explainability.
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
-from enum import Enum
 import time
-import uuid
 
 
 @dataclass(frozen=True)
@@ -90,8 +88,8 @@ class ExecutionContext:
     enriched_facts: Dict[str, Any]
     fired_rules: List[str]
     reasoning_steps: List[str] = field(default_factory=list)
-    context_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    start_time_ns: int = field(default_factory=time.perf_counter_ns)
+    _verdict: Dict[str, Any] = field(default_factory=dict)  # Track changes incrementally
+    start_time: float = field(default_factory=time.perf_counter)
     
     def __post_init__(self):
         # Initialize enriched facts from original
@@ -99,8 +97,11 @@ class ExecutionContext:
             self.enriched_facts = self.original_facts.data.copy()
     
     def set_fact(self, key: str, value: Any) -> None:
-        """Set a fact in the context."""
+        """Set a fact in the context and track in verdict."""
         self.enriched_facts[key] = value
+        # Track as changed if it's new or different from original
+        if key not in self.original_facts.data or self.original_facts.data[key] != value:
+            self._verdict[key] = value
     
     def get_fact(self, key: str, default: Any = None) -> Any:
         """Get a fact from the context."""
@@ -112,16 +113,9 @@ class ExecutionContext:
         self.reasoning_steps.append(f"✓ {rule_id}: {reason}")
     
     @property
-    def execution_time_ns(self) -> int:
-        """Current execution time in nanoseconds."""
-        return time.perf_counter_ns() - self.start_time_ns
-    
-    @property
     def verdict(self) -> Dict[str, Any]:
-        """Extract verdict - facts that were added/modified."""
-        return {k: v for k, v in self.enriched_facts.items() 
-                if k not in self.original_facts.data or 
-                self.original_facts.data[k] != v}
+        """Get verdict - facts that were added/modified."""
+        return self._verdict.copy()
     
     @property
     def reasoning(self) -> str:

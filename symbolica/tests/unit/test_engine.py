@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any
 import json
 
-from symbolica import Engine, facts, TraceLevel
+from symbolica import Engine, facts
 from symbolica.core import ValidationError, SymbolicaError
 from symbolica.core.models import Rule, Facts
 
@@ -510,7 +510,7 @@ class TestTracing:
                 tags=["approval", "premium"]
             )
         ]
-        engine = Engine(rules, trace_level=TraceLevel.DETAILED)
+        engine = Engine(rules)
         
         result = engine.reason(facts(amount=150))
         
@@ -519,28 +519,9 @@ class TestTracing:
         assert result.verdict["tier"] == "premium"
         assert "trace_rule" in result.fired_rules
         
-        # Check detailed tracing
-        assert len(result.rule_traces) == 1
-        rule_trace = result.rule_traces[0]
-        
-        assert rule_trace.rule_id == "trace_rule"
-        assert rule_trace.priority == 10
-        assert rule_trace.fired is True
-        assert rule_trace.actions_applied == {"status": "approved", "tier": "premium"}
-        assert rule_trace.tags == ["approval", "premium"]
-        
-        # Check condition trace
-        condition_trace = rule_trace.condition_trace
-        assert condition_trace.expression == "amount > 100"
-        assert condition_trace.result is True
-        assert condition_trace.error is None
-        
-        # Check field accesses
-        field_accesses = condition_trace.field_accesses
-        assert len(field_accesses) == 1
-        assert field_accesses[0].field_name == "amount"
-        assert field_accesses[0].value == 150
-        assert field_accesses[0].access_type == "read"
+        # Check simple reasoning
+        assert "trace_rule" in result.reasoning
+        assert result.execution_time_ms > 0
 
     def test_multiple_rules_tracing(self):
         """Test tracing with multiple rules and dependencies."""
@@ -567,20 +548,9 @@ class TestTracing:
         assert "basic_check" in result.fired_rules
         assert "premium_check" in result.fired_rules
         
-        # Check rule traces
-        assert len(result.rule_traces) == 2
-        
-        # First rule trace
-        basic_trace = result.rule_traces[0]
-        assert basic_trace.rule_id == "basic_check"
-        assert basic_trace.fired is True
-        assert basic_trace.actions_applied == {"valid": True}
-        
-        # Second rule trace
-        premium_trace = result.rule_traces[1]
-        assert premium_trace.rule_id == "premium_check"
-        assert premium_trace.fired is True
-        assert premium_trace.actions_applied == {"tier": "premium"}
+        # Check simple reasoning includes both rules
+        assert "basic_check" in result.reasoning
+        assert "premium_check" in result.reasoning
 
     def test_non_firing_rule_tracing(self):
         """Test tracing for rules that don't fire."""
@@ -606,20 +576,15 @@ class TestTracing:
         assert len(result.fired_rules) == 0
         assert result.verdict == {}
         
-        # But we should have traces for both rules
-        assert len(result.rule_traces) == 2
-        
-        for rule_trace in result.rule_traces:
-            assert rule_trace.fired is False
-            assert rule_trace.actions_applied == {}
-            assert rule_trace.condition_trace.result is False
+        # Check that reasoning indicates no rules fired
+        assert result.reasoning == "No rules fired"
 
 
 class TestExplanations:
-    """Test explanation and reasoning functionality."""
+    """Test simple explanation functionality."""
 
-    def test_explain_reasoning(self):
-        """Test the explain_reasoning method."""
+    def test_basic_reasoning(self):
+        """Test basic reasoning output."""
         rules = [
             Rule(
                 id="approval_rule",
@@ -632,54 +597,10 @@ class TestExplanations:
         
         result = engine.reason(facts(score=85))
         
-        explanation = result.explain_reasoning()
-        assert isinstance(explanation, str)
-        assert "approval_rule" in explanation
-        assert "1 rules fired" in explanation
-        assert "high_score" in explanation or "approved" in explanation
-
-    def test_rule_trace_explanations(self):
-        """Test individual rule trace explanations."""
-        rules = [
-            Rule(
-                id="test_rule",
-                priority=10,
-                condition="value > 50",
-                actions={"result": "pass"}
-            )
-        ]
-        engine = Engine(rules)
-        
-        result = engine.reason(facts(value=75))
-        
-        rule_trace = result.rule_traces[0]
-        explanation = rule_trace.explain()
-        
-        assert "test_rule" in explanation
-        assert "fired" in explanation
-        assert "pass" in explanation
-        assert "value" in explanation
-
-    def test_condition_trace_explanations(self):
-        """Test condition trace explanations."""
-        rules = [
-            Rule(
-                id="condition_rule",
-                priority=10,
-                condition="age >= 18 and status == 'active'",
-                actions={"eligible": True}
-            )
-        ]
-        engine = Engine(rules)
-        
-        result = engine.reason(facts(age=25, status="active"))
-        
-        condition_trace = result.rule_traces[0].condition_trace
-        explanation = condition_trace.explain()
-        
-        assert "TRUE" in explanation
-        assert "age" in explanation
-        assert "status" in explanation
+        # Check simple reasoning string
+        assert isinstance(result.reasoning, str)
+        assert "approval_rule" in result.reasoning
+        assert result.reasoning != "No rules fired"
 
     def test_llm_context_generation(self):
         """Test LLM-friendly context generation."""
@@ -698,23 +619,11 @@ class TestExplanations:
         
         llm_context = result.get_llm_context()
         
-        # Check structure
-        assert "reasoning_summary" in llm_context
-        assert "decision_chain" in llm_context
-        assert "rules_not_triggered" in llm_context
-        assert "explanation" in llm_context
-        
-        # Check reasoning summary
-        summary = llm_context["reasoning_summary"]
-        assert summary["total_rules_evaluated"] == 1
-        assert summary["rules_fired"] == 1
-        assert "final_facts" in summary
-        
-        # Check decision chain
-        decision_chain = llm_context["decision_chain"]
-        assert len(decision_chain) == 1
-        assert decision_chain[0]["rule_id"] == "customer_tier"
-        assert decision_chain[0]["fired"] is True
+        # Check basic structure
+        assert "rules_fired" in llm_context
+        assert "final_facts" in llm_context
+        assert "execution_time_ms" in llm_context
+        assert "reasoning" in llm_context
 
     def test_reasoning_json_output(self):
         """Test JSON output for LLM prompts."""
@@ -735,15 +644,15 @@ class TestExplanations:
         # Should be valid JSON
         parsed = json.loads(json_output)
         assert isinstance(parsed, dict)
-        assert "reasoning_summary" in parsed
-        assert "decision_chain" in parsed
+        assert "rules_fired" in parsed
+        assert "final_facts" in parsed
 
 
-class TestErrorTracing:
-    """Test error handling and tracing."""
+class TestErrorHandling:
+    """Test basic error handling."""
 
-    def test_error_in_condition_tracing(self):
-        """Test tracing when condition evaluation errors."""
+    def test_error_in_condition_handling(self):
+        """Test handling when condition evaluation errors."""
         rules = [
             Rule(
                 id="error_rule",
@@ -759,69 +668,6 @@ class TestErrorTracing:
         # Rule should not fire due to error
         assert len(result.fired_rules) == 0
         assert result.verdict == {}
-        
-        # But we should have a trace with error information
-        assert len(result.rule_traces) == 1
-        rule_trace = result.rule_traces[0]
-        
-        assert rule_trace.fired is False
-        assert rule_trace.condition_trace.error is not None
-        assert "nonexistent_field" in rule_trace.condition_trace.error
-
-    def test_error_explanation(self):
-        """Test explanation of error conditions."""
-        rules = [
-            Rule(
-                id="error_rule",
-                priority=10,
-                condition="missing_field == 'test'",
-                actions={"status": "test"}
-            )
-        ]
-        engine = Engine(rules)
-        
-        result = engine.reason(facts(amount=100))
-        
-        rule_trace = result.rule_traces[0]
-        explanation = rule_trace.explain()
-        
-        assert "did not fire" in explanation
-        assert "missing_field" in explanation
-
-
-class TestFieldAccess:
-    """Test field access tracking."""
-
-    def test_field_access_tracking(self):
-        """Test that field accesses are properly tracked."""
-        rules = [
-            Rule(
-                id="access_rule",
-                priority=10,
-                condition="field1 > 10 and field2 == 'test'",
-                actions={"result": "success"}
-            )
-        ]
-        engine = Engine(rules)
-        
-        result = engine.reason(facts(field1=15, field2="test"))
-        
-        condition_trace = result.rule_traces[0].condition_trace
-        field_accesses = condition_trace.field_accesses
-        
-        # Should have recorded accesses to both fields
-        field_names = [fa.field_name for fa in field_accesses]
-        assert "field1" in field_names
-        assert "field2" in field_names
-        
-        # Check access details
-        for fa in field_accesses:
-            assert fa.access_type == "read"
-            assert fa.rule_id == "access_rule"
-            if fa.field_name == "field1":
-                assert fa.value == 15
-            elif fa.field_name == "field2":
-                assert fa.value == "test"
 
 
 class TestPerformance:
@@ -839,19 +685,18 @@ class TestPerformance:
             for i in range(1, 11)  # 10 rules
         ]
         
-        engine = Engine(rules, trace_level=TraceLevel.DETAILED)
+        engine = Engine(rules)
         
         result = engine.reason(facts(value=55))
         
         # Should complete in reasonable time
         assert result.execution_time_ms < 100  # Less than 100ms
         
-        # Should have traces for all rules
-        assert len(result.rule_traces) == 10
+        # Should have fired appropriate rules (1-5)
+        assert len(result.fired_rules) == 5
         
-        # Should have fired appropriate rules
-        fired_count = sum(1 for rt in result.rule_traces if rt.fired)
-        assert fired_count == 5  # Rules 1-5 should fire
+        # Should have simple reasoning
+        assert result.reasoning != "No rules fired"
 
 
 class TestYAMLParsing:
@@ -872,8 +717,9 @@ class TestYAMLParsing:
         engine = Engine.from_yaml(yaml_content)
         result = engine.reason(facts(amount=150))
         
-        rule_trace = result.rule_traces[0]
-        assert rule_trace.tags == ["approval", "high-value"]
+        # Check that rule fired
+        assert "tagged_rule" in result.fired_rules
+        assert result.verdict["status"] == "approved"
 
     def test_yaml_error_handling(self):
         """Test YAML error handling."""

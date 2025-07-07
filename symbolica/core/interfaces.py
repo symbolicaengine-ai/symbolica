@@ -43,23 +43,8 @@ class ConditionEvaluator(ABC):
         pass
 
 
-class ActionExecutor(ABC):
-    """Executes rule actions (simple set operations)."""
-    
-    @abstractmethod
-    def execute(self, actions: Dict[str, Any], context: 'ExecutionContext') -> None:
-        """
-        Execute actions, modifying the context.
-        
-        Args:
-            actions: Dictionary of key-value pairs to set in context
-            context: Execution context to modify
-        """
-        pass
-
-
 class ExecutionStrategy(ABC):
-    """Strategy for executing rules in a specific order."""
+    """Strategy for ordering rule execution based on dependencies."""
     
     @abstractmethod
     def get_execution_order(self, rules: List['Rule']) -> List['Rule']:
@@ -71,16 +56,5 @@ class ExecutionStrategy(ABC):
             
         Returns:
             Rules in execution order
-        """
-        pass
-    
-    @abstractmethod
-    def execute(self, rules: List['Rule'], context: 'ExecutionContext') -> None:
-        """
-        Execute rules using this strategy.
-        
-        Args:
-            rules: List of rules to execute
-            context: Execution context
         """
         pass 
