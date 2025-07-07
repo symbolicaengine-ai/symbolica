@@ -2,15 +2,13 @@
 Symbolica: Deterministic Rule Engine for AI Agents
 ==================================================
 
-High-performance rule engine providing deterministic, traceable reasoning
-for AI agents. Replaces unpredictable LLM reasoning with structured,
-explainable decision-making.
+Simple, focused rule engine providing deterministic, explainable reasoning
+for AI agents. Clean architecture without overengineering.
 
 Core Features:
 - YAML-based rule definition with flexible syntax
-- Comprehensive execution tracing for AI explainability
-- DAG-based dependency resolution for complex rulesets
-- LLM-friendly reasoning explanations
+- Simple explanations for AI agents
+- DAG-based dependency resolution
 - Fast AST-based expression evaluation
 
 Example Usage:
@@ -26,11 +24,11 @@ Example Usage:
           discount: 0.1
     ''')
     
-    # Execute with tracing
+    # Execute with simple explanation
     result = engine.reason(facts(purchase_amount=1500))
     
-    # Get detailed explanation
-    print(result.explain_reasoning())
+    # Get clean reasoning
+    print(result.reasoning)
     
     # Get LLM-friendly context
     llm_context = result.get_llm_context()
@@ -39,9 +37,6 @@ Example Usage:
 from .core import (
     # Core models
     Rule, Facts, ExecutionContext, ExecutionResult,
-    
-    # Enhanced tracing
-    RuleEvaluationTrace, ConditionTrace, FieldAccess, TraceLevel,
     
     # Engine
     Engine,
@@ -63,9 +58,6 @@ __author__ = "Symbolica Team"
 __all__ = [
     # Core models
     'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
-    
-    # Enhanced tracing
-    'RuleEvaluationTrace', 'ConditionTrace', 'FieldAccess', 'TraceLevel',
     
     # Engine
     'Engine',

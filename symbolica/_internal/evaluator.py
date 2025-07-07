@@ -9,12 +9,10 @@ Features:
 - Safe AST evaluation (no eval() vulnerabilities)
 - Simple caching for performance
 - Field extraction for DAG dependency analysis
-- Detailed tracing for AI explainability
 """
 
 import ast
 import re
-import time
 from typing import Dict, Any, Set, Union, List, TYPE_CHECKING
 from functools import lru_cache
 
@@ -23,7 +21,7 @@ from ..core.interfaces import ConditionEvaluator
 from ..core.exceptions import EvaluationError
 
 if TYPE_CHECKING:
-    from ..core.models import ExecutionContext, FieldAccess, ConditionTrace
+    from ..core.models import ExecutionContext
 
 
 # Pre-compiled patterns for performance
@@ -34,36 +32,11 @@ RESERVED_WORDS = frozenset({
 })
 
 
-class TracingNameCollector(ast.NodeVisitor):
-    """AST visitor that collects field names accessed during evaluation."""
-    
-    def __init__(self, context: 'ExecutionContext'):
-        self.context = context
-        self.field_accesses: List['FieldAccess'] = []
-        
-    def visit_Name(self, node):
-        if isinstance(node.ctx, ast.Load) and node.id not in RESERVED_WORDS:
-            # Import here to avoid circular imports
-            from ..core.models import FieldAccess
-            
-            # This is a field access
-            value = self.context.get_fact(node.id)
-            field_access = FieldAccess(
-                field_name=node.id,
-                value=value,
-                access_type='read',
-                rule_id=self.context.current_rule_id
-            )
-            self.field_accesses.append(field_access)
-        self.generic_visit(node)
-
-
 class ASTEvaluator(ConditionEvaluator):
     """
-    High-performance AST-based condition evaluator with detailed tracing.
+    Simple, fast AST-based condition evaluator.
     
-    Safely evaluates Python-like expressions against execution context
-    while capturing detailed trace information for AI explainability.
+    Safely evaluates Python-like expressions against execution context.
     """
     
     def __init__(self):
@@ -74,46 +47,16 @@ class ASTEvaluator(ConditionEvaluator):
     
     def evaluate(self, condition_expr: str, context: 'ExecutionContext') -> bool:
         """Evaluate condition expression against context."""
-        result, _ = self.evaluate_with_trace(condition_expr, context)
-        return result
-    
-    def evaluate_with_trace(self, condition_expr: str, context: 'ExecutionContext') -> tuple[bool, 'ConditionTrace']:
-        """Evaluate condition expression and return detailed trace."""
-        # Import here to avoid circular imports
-        from ..core.models import ConditionTrace
-        
-        start_time = time.perf_counter_ns()
-        field_accesses = []
-        error_msg = None
-        result = False
-        
         try:
             # Parse expression into AST
             tree = ast.parse(condition_expr.strip(), mode='eval')
             
-            # Collect field accesses
-            name_collector = TracingNameCollector(context)
-            name_collector.visit(tree)
-            field_accesses = name_collector.field_accesses
-            
             # Evaluate the AST
             result = self._eval_ast_node(tree.body, context)
+            return bool(result)
             
         except Exception as e:
-            error_msg = str(e)
-            result = False
-        
-        evaluation_time = time.perf_counter_ns() - start_time
-        
-        condition_trace = ConditionTrace(
-            expression=condition_expr,
-            result=result,
-            evaluation_time_ns=evaluation_time,
-            field_accesses=field_accesses,
-            error=error_msg
-        )
-        
-        return result, condition_trace
+            raise EvaluationError(f"Evaluation error: {e}")
     
     def _eval_ast_node(self, node, context: 'ExecutionContext') -> Any:
         """Recursively evaluate AST nodes."""
