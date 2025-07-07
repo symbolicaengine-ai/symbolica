@@ -13,6 +13,7 @@ from ..core.interfaces import ExecutionStrategy
 
 if TYPE_CHECKING:
     from ..core.models import Rule, ExecutionContext
+    from ..core.interfaces import ConditionEvaluator
 
 
 class DAGStrategy(ExecutionStrategy):
