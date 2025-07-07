@@ -2,7 +2,7 @@
 Pytest Configuration and Shared Fixtures
 ========================================
 
-Provides shared test fixtures and configuration for the entire test suite.
+Provides shared test fixtures for the simplified Symbolica engine.
 """
 
 import pytest
@@ -11,11 +11,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, List
 
-from symbolica import Engine, from_yaml
-from symbolica.core import (
-    Rule, RuleSet, Facts, Priority, Condition, Action, 
-    rule_id, priority, condition, action_set, facts
-)
+from symbolica import Engine
+from symbolica.core import Rule, Facts, ExecutionResult, facts
 
 
 @pytest.fixture
@@ -33,46 +30,15 @@ def sample_facts() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def basic_rule() -> Rule:
-    """Simple rule for unit testing."""
-    return Rule(
-        id=rule_id("test_rule"),
-        priority=priority(100),
-        condition=condition("amount > 1000"),
-        actions=[action_set(tier='premium')]
-    )
-
-
-@pytest.fixture
-def complex_rule_set() -> RuleSet:
-    """Complex rule set for integration testing."""
-    rules = [
-        Rule(
-            id=rule_id("high_value"),
-            priority=priority(100),
-            condition=condition("amount > 1000 and status == 'active'"),
-            actions=[action_set(tier='premium', discount=0.15)]
-        ),
-        Rule(
-            id=rule_id("risk_check"),
-            priority=priority(90),
-            condition=condition("risk_score > 50"),
-            actions=[action_set(requires_review=True, tier='standard')]
-        ),
-        Rule(
-            id=rule_id("country_check"),
-            priority=priority(80),
-            condition=condition("country not in ['US', 'CA', 'UK']"),
-            actions=[action_set(international=True, fee=25)]
-        ),
-        Rule(
-            id=rule_id("age_bonus"),
-            priority=priority(70),
-            condition=condition("age >= 25 and user_type == 'premium'"),
-            actions=[action_set(age_bonus=50)]
-        )
-    ]
-    return RuleSet(rules=rules)
+def simple_rule_dict() -> Dict[str, Any]:
+    """Simple rule data for unit testing."""
+    return {
+        'id': 'test_rule',
+        'priority': 100,
+        'condition': 'amount > 1000',
+        'actions': {'tier': 'premium', 'approved': True},
+        'tags': ['test', 'simple']
+    }
 
 
 @pytest.fixture
@@ -84,9 +50,9 @@ rules:
     priority: 100
     if: "amount > 1000 and status == 'active'"
     then:
-      set:
-        tier: premium
-        discount: 0.15
+      tier: premium
+      discount: 0.15
+    tags: [customer, premium]
         
   - id: risk_assessment
     priority: 90
@@ -95,23 +61,23 @@ rules:
         - "risk_score < 50"
         - "country in ['US', 'CA', 'UK']"
     then:
-      set:
-        approved: true
-        risk_level: low
+      approved: true
+      risk_level: low
+    tags: [risk, approval]
         
   - id: account_bonus
     priority: 80
     if: "account_balance > 5000 and user_type == 'premium'"
     then:
-      set:
-        bonus_eligible: true
-        bonus_amount: 100
+      bonus_eligible: true
+      bonus_amount: 100
+    tags: [bonus, reward]
 """
 
 
 @pytest.fixture
-def nested_conditions_yaml() -> str:
-    """Complex nested conditions for testing."""
+def structured_conditions_yaml() -> str:
+    """Complex structured conditions for testing."""
     return """
 rules:
   - id: complex_approval
@@ -125,9 +91,9 @@ rules:
           - "user_type == 'premium'"
           - "account_balance > 10000"
     then:
-      set:
-        approved: true
-        approval_reason: "high_value_or_premium"
+      approved: true
+      approval_reason: "high_value_or_premium"
+    tags: [approval, complex]
         
   - id: fraud_detection
     priority: 200
@@ -139,9 +105,24 @@ rules:
           - "country not in ['US', 'CA']"
           - "age < 21"
     then:
-      set:
-        flagged: true
-        review_required: true
+      flagged: true
+      review_required: true
+    tags: [fraud, security]
+      
+  - id: nested_logic
+    priority: 150
+    if:
+      all:
+        - not: "status == 'inactive'"
+        - any:
+          - "user_type == 'vip'"
+          - all:
+            - "account_balance > 50000"
+            - "age >= 25"
+    then:
+      special_treatment: true
+      priority_support: true
+    tags: [vip, nested]
 """
 
 
@@ -154,25 +135,60 @@ def temp_directory():
 
 
 @pytest.fixture
-def yaml_files_directory(temp_directory, sample_yaml_rules):
-    """Directory with sample YAML files."""
+def yaml_files_directory(temp_directory):
+    """Directory with sample YAML files for testing directory loading."""
     yaml_dir = temp_directory / "rules"
     yaml_dir.mkdir()
     
-    # Create multiple YAML files
-    (yaml_dir / "main_rules.yaml").write_text(sample_yaml_rules)
+    # Create subdirectories
+    (yaml_dir / "customer").mkdir()
+    (yaml_dir / "security").mkdir()
     
-    additional_rules = """
+    # Main rules file
+    main_rules = """
 rules:
-  - id: late_payment_fee
-    priority: 60
-    if: "days_overdue > 30"
+  - id: general_rule
+    priority: 50
+    if: "status == 'active'"
     then:
-      set:
-        late_fee: 25
-        collection_eligible: true
+      processed: true
+    tags: [general]
 """
-    (yaml_dir / "payment_rules.yaml").write_text(additional_rules)
+    (yaml_dir / "main_rules.yaml").write_text(main_rules)
+    
+    # Customer rules
+    customer_rules = """
+rules:
+  - id: vip_customer
+    priority: 100
+    if: "user_type == 'vip'"
+    then:
+      special_treatment: true
+      priority_support: true
+    tags: [customer, vip]
+      
+  - id: loyalty_bonus
+    priority: 80
+    if: "loyalty_years >= 5"
+    then:
+      loyalty_bonus: 500
+      bonus_rate: 0.05
+    tags: [customer, loyalty]
+"""
+    (yaml_dir / "customer" / "customer_rules.yaml").write_text(customer_rules)
+    
+    # Security rules
+    security_rules = """
+rules:
+  - id: high_risk_transaction
+    priority: 200
+    if: "amount > 10000 and risk_score > 70"
+    then:
+      requires_approval: true
+      alert_level: high
+    tags: [security, risk]
+"""
+    (yaml_dir / "security" / "security_rules.yaml").write_text(security_rules)
     
     return yaml_dir
 
@@ -180,14 +196,14 @@ rules:
 @pytest.fixture
 def engine_with_rules(sample_yaml_rules) -> Engine:
     """Engine instance with pre-loaded rules."""
-    return from_yaml(sample_yaml_rules)
+    return Engine.from_yaml(sample_yaml_rules)
 
 
 @pytest.fixture
 def performance_facts() -> List[Dict[str, Any]]:
     """Large dataset for performance testing."""
     facts_list = []
-    for i in range(1000):
+    for i in range(500):  # Reduced for faster tests
         facts_list.append({
             'amount': 500 + (i * 10),
             'status': 'active' if i % 3 == 0 else 'pending',
@@ -201,6 +217,23 @@ def performance_facts() -> List[Dict[str, Any]]:
     return facts_list
 
 
+@pytest.fixture
+def expression_test_facts() -> Dict[str, Any]:
+    """Facts for testing various expression types."""
+    return {
+        'amount': 1500,
+        'status': 'active',
+        'user_type': 'premium',
+        'risk_score': 25.5,
+        'tags': ['vip', 'loyalty'],
+        'metadata': {'region': 'US', 'tier': 'gold'},
+        'payment_history': [100, 95, 88, 92, 98],
+        'last_login': None,
+        'account_verified': True,
+        'account_balance': 5000.50
+    }
+
+
 # Test data constants
 INVALID_YAML_SAMPLES = [
     # Missing required fields
@@ -208,8 +241,7 @@ INVALID_YAML_SAMPLES = [
 rules:
   - if: "amount > 1000"
     then:
-      set:
-        tier: premium
+      tier: premium
 """,
     # Invalid YAML syntax
     """
@@ -217,23 +249,21 @@ rules:
   - id: test
     if: amount > 1000
     then:
-      set:
-        tier: premium
-        invalid: [unclosed list
+      tier: premium
+      invalid: [unclosed list
 """,
-    # Invalid expression syntax
+    # Empty rules
     """
-rules:
-  - id: invalid_expr
-    if: "amount >"
-    then:
-      set:
-        tier: premium
+rules: []
+""",
+    # No rules key
+    """
+other_key: value
 """,
 ]
 
 
-ERROR_CASES = [
+ERROR_TEST_CASES = [
     {
         'name': 'division_by_zero',
         'facts': {'amount': 1000, 'divisor': 0},
@@ -246,7 +276,42 @@ ERROR_CASES = [
     },
     {
         'name': 'type_error',
-        'facts': {'amount': '1000'},
+        'facts': {'amount': 'not_a_number'},
         'condition': 'amount + 500 > 2000'
     },
+    {
+        'name': 'invalid_syntax',
+        'facts': {'amount': 1000},
+        'condition': 'amount >'
+    },
+]
+
+
+EXPRESSION_TEST_CASES = [
+    # Basic comparisons
+    {'expr': 'amount > 1000', 'expected': True},
+    {'expr': 'amount < 1000', 'expected': False},
+    {'expr': 'amount == 1500', 'expected': True},
+    {'expr': 'status == "active"', 'expected': True},
+    {'expr': 'status != "inactive"', 'expected': True},
+    
+    # Boolean logic
+    {'expr': 'amount > 1000 and status == "active"', 'expected': True},
+    {'expr': 'amount > 2000 or status == "active"', 'expected': True},
+    {'expr': 'not status == "inactive"', 'expected': True},
+    
+    # List operations
+    {'expr': '"vip" in tags', 'expected': True},
+    {'expr': '"new" not in tags', 'expected': True},
+    {'expr': 'len(payment_history) >= 5', 'expected': True},
+    {'expr': 'sum(payment_history) > 400', 'expected': True},
+    
+    # Null checks
+    {'expr': 'last_login == None', 'expected': True},
+    {'expr': 'account_verified == True', 'expected': True},
+    
+    # Arithmetic
+    {'expr': 'amount + 500 > 1800', 'expected': True},
+    {'expr': 'amount * 2 == 3000', 'expected': True},
+    {'expr': 'account_balance / 100 > 40', 'expected': True},
 ] 

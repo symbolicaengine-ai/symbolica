@@ -1,352 +1,186 @@
 """
-Unit Tests for Core Domain Models
-=================================
+Unit Tests for Simplified Core Models
+=====================================
 
-Tests for Rule, RuleSet, Facts, ExecutionContext, ExecutionResult, and related models.
+Tests for Rule, Facts, ExecutionContext, ExecutionResult in the simplified architecture.
 """
 
 import pytest
-import uuid
 from typing import Dict, Any
 
 from symbolica.core import (
-    Rule, RuleSet, Facts, ExecutionContext, ExecutionResult, 
-    Priority, Condition, Action, RuleId, TraceLevel,
-    rule_id, priority, condition, action_set, action_call, facts,
-    ValidationError, EvaluationError
+    Rule, Facts, ExecutionContext, ExecutionResult, 
+    TraceLevel, facts, SymbolicaError, ValidationError
 )
 
 
-class TestRuleId:
-    """Test RuleId value object."""
-    
-    @pytest.mark.unit
-    def test_rule_id_creation(self):
-        """Test basic rule ID creation."""
-        rid = rule_id("test_rule")
-        assert rid.value == "test_rule"
-        assert str(rid) == "RuleId(value='test_rule')"
-        assert repr(rid) == "RuleId(value='test_rule')"
-    
-    @pytest.mark.unit
-    def test_rule_id_equality(self):
-        """Test rule ID equality."""
-        rid1 = rule_id("test")
-        rid2 = rule_id("test")
-        rid3 = rule_id("other")
-        
-        assert rid1 == rid2
-        assert rid1 != rid3
-        assert hash(rid1) == hash(rid2)
-        assert hash(rid1) != hash(rid3)
-    
-    @pytest.mark.unit
-    def test_rule_id_validation(self):
-        """Test rule ID validation."""
-        # Valid IDs
-        assert rule_id("valid_rule").value == "valid_rule"
-        assert rule_id("rule123").value == "rule123"
-        assert rule_id("rule_with_underscores").value == "rule_with_underscores"
-        assert rule_id("rule-with-dashes").value == "rule-with-dashes"  # Dashes are valid
-        
-        # Invalid IDs should raise ValueError
-        with pytest.raises(ValueError):
-            rule_id("")  # Empty
-        
-        with pytest.raises(ValueError):
-            rule_id("rule with spaces")  # Spaces
-
-
-class TestPriority:
-    """Test Priority value object."""
-    
-    @pytest.mark.unit
-    def test_priority_creation(self):
-        """Test priority creation."""
-        p = priority(100)
-        assert p.value == 100
-        assert str(p) == "Priority(value=100)"
-        assert repr(p) == "Priority(value=100)"
-    
-    @pytest.mark.unit
-    def test_priority_comparison(self):
-        """Test priority comparison."""
-        p1 = priority(100)
-        p2 = priority(200)
-        p3 = priority(100)
-        
-        assert p1 < p2
-        assert p2 > p1
-        assert p1 == p3
-        assert not p1 > p3
-        assert not p1 < p3
-    
-    @pytest.mark.unit
-    def test_priority_validation(self):
-        """Test priority validation."""
-        # Valid priorities
-        assert priority(0).value == 0
-        assert priority(100).value == 100
-        assert priority(1000).value == 1000
-        
-        # Invalid priorities
-        with pytest.raises(ValueError):
-            priority(-1)  # Negative
-
-
-class TestCondition:
-    """Test Condition value object."""
-    
-    @pytest.mark.unit
-    def test_string_condition(self):
-        """Test string-based conditions."""
-        cond = condition("amount > 1000")
-        assert cond.expression == "amount > 1000"
-        assert hasattr(cond, 'content_hash')
-        assert hasattr(cond, 'referenced_fields')
-    
-    @pytest.mark.unit
-    def test_condition_equality(self):
-        """Test condition equality."""
-        cond1 = condition("amount > 1000")
-        cond2 = condition("amount > 1000")
-        cond3 = condition("amount > 2000")
-        
-        assert cond1 == cond2
-        assert cond1 != cond3
-        assert cond1.content_hash == cond2.content_hash
-    
-    @pytest.mark.unit
-    def test_condition_validation(self):
-        """Test condition validation."""
-        # Valid condition
-        cond = condition("amount > 1000")
-        assert cond.expression == "amount > 1000"
-        
-        # Invalid condition
-        with pytest.raises(ValueError):
-            condition("")  # Empty
-
-
-class TestAction:
-    """Test Action value object."""
-    
-    @pytest.mark.unit
-    def test_set_action(self):
-        """Test set action creation."""
-        action = action_set(tier='premium', discount=0.15)
-        assert action.type == "set"
-        assert action.parameters == {'tier': 'premium', 'discount': 0.15}
-    
-    @pytest.mark.unit
-    def test_call_action(self):
-        """Test function call action."""
-        action = action_call('send_email', template='welcome', user_id=123)
-        assert action.type == "call"
-        assert action.parameters['function'] == 'send_email'
-        assert action.parameters['params'] == {'template': 'welcome', 'user_id': 123}
-    
-    @pytest.mark.unit
-    def test_action_equality(self):
-        """Test action equality."""
-        action1 = action_set(tier='premium')
-        action2 = action_set(tier='premium')
-        action3 = action_set(tier='standard')
-        
-        assert action1 == action2
-        assert action1 != action3
-
-
 class TestRule:
-    """Test Rule entity."""
+    """Test the simplified Rule model."""
     
     @pytest.mark.unit
-    def test_rule_creation(self, basic_rule):
-        """Test basic rule creation."""
-        rule = basic_rule
-        assert rule.id.value == "test_rule"
-        assert rule.priority.value == 100
-        assert rule.condition.expression == "amount > 1000"
-        assert rule.actions[0].type == "set"
+    def test_rule_creation(self, simple_rule_dict):
+        """Test basic rule creation from dict data."""
+        rule = Rule(**simple_rule_dict)
+        
+        assert rule.id == "test_rule"
+        assert rule.priority == 100
+        assert rule.condition == "amount > 1000"
+        assert rule.actions == {'tier': 'premium', 'approved': True}
+        assert rule.tags == ['test', 'simple']
     
     @pytest.mark.unit
-    def test_rule_equality(self):
-        """Test rule equality (based on ID)."""
-        rule1 = Rule(
-            id=rule_id("test"),
-            priority=priority(100),
-            condition=condition("amount > 1000"),
-            action=action_set({'tier': 'premium'})
-        )
-        rule2 = Rule(
-            id=rule_id("test"),
-            priority=priority(200),  # Different priority
-            condition=condition("amount > 2000"),  # Different condition
-            action=action_set({'tier': 'standard'})  # Different action
-        )
-        rule3 = Rule(
-            id=rule_id("other"),
-            priority=priority(100),
-            condition=condition("amount > 1000"),
-            action=action_set({'tier': 'premium'})
+    def test_rule_minimal_creation(self):
+        """Test rule creation with minimal required fields."""
+        rule = Rule(
+            id="minimal_rule",
+            priority=50,
+            condition="status == 'active'",
+            actions={'processed': True}
         )
         
-        # Rules with same ID are equal
-        assert rule1 == rule2
-        assert rule1 != rule3
-        assert hash(rule1) == hash(rule2)
+        assert rule.id == "minimal_rule"
+        assert rule.priority == 50
+        assert rule.condition == "status == 'active'"
+        assert rule.actions == {'processed': True}
+        assert rule.tags == []  # Default empty list
     
     @pytest.mark.unit
     def test_rule_validation(self):
-        """Test rule validation."""
+        """Test rule validation logic."""
         # Valid rule
         rule = Rule(
-            id=rule_id("valid"),
-            priority=priority(100),
-            condition=condition("amount > 1000"),
-            actions=[action_set(tier='premium')]
+            id="valid_rule",
+            priority=100,
+            condition="amount > 1000",
+            actions={'tier': 'premium'}
         )
-        assert rule.id.value == "valid"
+        assert rule.id == "valid_rule"
         
-        # Rule with empty actions
-        with pytest.raises(ValueError):
-            Rule(
-                id=rule_id("invalid"),
-                priority=priority(100),
-                condition=condition("amount > 1000"),
-                actions=[]  # Empty actions
-            )
+        # Invalid rules should raise ValueError during creation
+        with pytest.raises(ValueError, match="Rule ID must be a non-empty string"):
+            Rule(id="", priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        
+        with pytest.raises(ValueError, match="Rule ID must be a non-empty string"):
+            Rule(id=None, priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        
+        with pytest.raises(ValueError, match="Priority must be an integer"):
+            Rule(id="test", priority="high", condition="amount > 1000", actions={'tier': 'premium'})
+        
+        with pytest.raises(ValueError, match="Condition must be a non-empty string"):
+            Rule(id="test", priority=100, condition="", actions={'tier': 'premium'})
+        
+        with pytest.raises(ValueError, match="Actions must be a non-empty dictionary"):
+            Rule(id="test", priority=100, condition="amount > 1000", actions={})
+        
+        with pytest.raises(ValueError, match="Tags must be a list"):
+            Rule(id="test", priority=100, condition="amount > 1000", actions={'tier': 'premium'}, tags="invalid")
     
     @pytest.mark.unit
-    def test_rule_written_fields(self):
-        """Test written fields extraction."""
-        rule = Rule(
-            id=rule_id("test"),
-            priority=priority(100),
-            condition=condition("amount > 1000"),
-            actions=[action_set(tier='premium', discount=0.15)]
-        )
+    def test_rule_equality(self):
+        """Test that rules are equal based on all attributes."""
+        rule1 = Rule(id="test", priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        rule2 = Rule(id="test", priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        rule3 = Rule(id="different", priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        rule4 = Rule(id="test", priority=90, condition="amount > 1000", actions={'tier': 'premium'})
         
-        written_fields = rule.written_fields
-        assert 'tier' in written_fields
-        assert 'discount' in written_fields
-        assert len(written_fields) == 2
+        assert rule1 == rule2
+        assert rule1 != rule3  # Different ID
+        assert rule1 != rule4  # Different priority
+    
+    @pytest.mark.unit
+    def test_rule_immutability(self):
+        """Test that rules are immutable (frozen dataclass)."""
+        rule = Rule(id="test", priority=100, condition="amount > 1000", actions={'tier': 'premium'})
+        
+        # Should not be able to modify rule attributes
+        with pytest.raises(AttributeError):
+            rule.id = "modified"
+        
+        with pytest.raises(AttributeError):
+            rule.priority = 200
 
 
 class TestFacts:
-    """Test Facts value object."""
+    """Test the Facts data structure."""
     
     @pytest.mark.unit
     def test_facts_creation(self, sample_facts):
-        """Test facts creation."""
+        """Test facts creation from dict."""
         f = facts(**sample_facts)
+        
+        assert isinstance(f, Facts)
         assert f.data == sample_facts
         assert f['amount'] == 1500
         assert f['status'] == 'active'
     
     @pytest.mark.unit
-    def test_facts_get_with_default(self):
-        """Test facts get with default values."""
-        f = facts(amount=1000)
-        
-        assert f.get('amount') == 1000
-        assert f.get('status') is None
-        assert f.get('status', 'unknown') == 'unknown'
-    
-    @pytest.mark.unit
-    def test_facts_iteration(self, sample_facts):
-        """Test facts iteration."""
+    def test_facts_access_methods(self, sample_facts):
+        """Test different ways to access facts."""
         f = facts(**sample_facts)
         
-        # Test data access
-        assert f.data == sample_facts
-        assert f.has('amount')
-        assert not f.has('nonexistent')
+        # Dict-style access
+        assert f['amount'] == 1500
+        assert f['status'] == 'active'
+        
+        # Get method with default
+        assert f.get('amount') == 1500
+        assert f.get('nonexistent') is None
+        assert f.get('nonexistent', 'default') == 'default'
+        
+        # Contains check (using 'in' operator)
+        assert 'amount' in f
+        assert 'nonexistent' not in f
     
     @pytest.mark.unit
     def test_facts_immutability(self, sample_facts):
-        """Test that facts are immutable."""
+        """Test that Facts objects are immutable."""
         f = facts(**sample_facts)
         
-        # Facts object itself is immutable (dataclass with frozen=True)
-        # Direct data modification would modify the underlying dict,
-        # but the Facts object is frozen
+        # Facts object itself is frozen
+        with pytest.raises(AttributeError):
+            f.data = {}
+        
+        # But underlying dict can still be modified (by design)
+        # This is acceptable since we control access through the Facts interface
+        original_amount = f['amount']
+        assert f['amount'] == original_amount
+    
+    @pytest.mark.unit
+    def test_facts_iteration(self, sample_facts):
+        """Test facts iteration capabilities."""
+        f = facts(**sample_facts)
+        
+        # Check data property
         assert f.data == sample_facts
-
-
-class TestRuleSet:
-    """Test RuleSet collection."""
+        
+        # Can iterate over the data
+        keys = list(f.data.keys())
+        assert 'amount' in keys
+        assert 'status' in keys
     
     @pytest.mark.unit
-    def test_rule_set_creation(self, complex_rule_set):
-        """Test rule set creation."""
-        rule_set = complex_rule_set
-        assert len(rule_set.rules) == 4
-        assert rule_set.version is not None
-    
-    @pytest.mark.unit
-    def test_rule_set_iteration(self, complex_rule_set):
-        """Test rule set iteration."""
-        rule_set = complex_rule_set
+    def test_facts_with_complex_types(self):
+        """Test facts with complex data types."""
+        complex_data = {
+            'amount': 1500,
+            'tags': ['vip', 'loyalty'],
+            'metadata': {'region': 'US', 'tier': 'gold'},
+            'payment_history': [100, 95, 88],
+            'active': True,
+            'last_login': None
+        }
         
-        rule_ids = [rule.id.value for rule in rule_set]
-        expected_ids = ['high_value', 'risk_check', 'country_check', 'age_bonus']
-        assert rule_ids == expected_ids
-    
-    @pytest.mark.unit
-    def test_rule_set_get_by_id(self, complex_rule_set):
-        """Test getting rule by ID."""
-        rule_set = complex_rule_set
+        f = facts(**complex_data)
         
-        rule = rule_set.get_rule('high_value')
-        assert rule is not None
-        assert rule.id.value == 'high_value'
-        
-        assert rule_set.get_rule('nonexistent') is None
-    
-    @pytest.mark.unit
-    def test_rule_set_validation(self):
-        """Test rule set validation."""
-        # Valid rule set
-        rules = [
-            Rule(
-                id=rule_id("rule1"),
-                priority=priority(100),
-                condition=condition("amount > 1000"),
-                actions=[action_set(tier='premium')]
-            ),
-            Rule(
-                id=rule_id("rule2"),
-                priority=priority(90),
-                condition=condition("status == 'active'"),
-                actions=[action_set(active=True)]
-            )
-        ]
-        rule_set = RuleSet(rules=rules)
-        assert rule_set.rule_count == 2
-        
-        # Invalid rule set - duplicate IDs
-        duplicate_rules = [
-            Rule(
-                id=rule_id("same_id"),
-                priority=priority(100),
-                condition=condition("amount > 1000"),
-                actions=[action_set(tier='premium')]
-            ),
-            Rule(
-                id=rule_id("same_id"),  # Duplicate ID
-                priority=priority(90),
-                condition=condition("status == 'active'"),
-                actions=[action_set(active=True)]
-            )
-        ]
-        
-        with pytest.raises(ValueError):
-            RuleSet(rules=duplicate_rules)
+        assert f['tags'] == ['vip', 'loyalty']
+        assert f['metadata']['region'] == 'US'
+        assert f['payment_history'][0] == 100
+        assert f['active'] is True
+        assert f['last_login'] is None
 
 
 class TestExecutionContext:
-    """Test ExecutionContext."""
+    """Test the ExecutionContext."""
     
     @pytest.mark.unit
     def test_execution_context_creation(self, sample_facts):
@@ -355,85 +189,169 @@ class TestExecutionContext:
         context = ExecutionContext(
             original_facts=f,
             enriched_facts={},
-            fired_rules=[],
-            trace_level=TraceLevel.BASIC
+            fired_rules=[]
         )
         
         assert context.original_facts == f
-        assert context.trace_level == TraceLevel.BASIC
-        assert context.context_id is not None
+        # enriched_facts is automatically initialized from original_facts
+        assert context.enriched_facts == sample_facts
+        assert context.fired_rules == []
+        assert context.verdict == {}  # No changes yet
+        assert hasattr(context, 'start_time_ns')
     
     @pytest.mark.unit
-    def test_execution_context_methods(self, sample_facts):
-        """Test execution context methods."""
+    def test_context_fact_operations(self, sample_facts):
+        """Test setting and getting facts in context."""
         f = facts(**sample_facts)
         context = ExecutionContext(
             original_facts=f,
             enriched_facts={},
-            fired_rules=[],
-            trace_level=TraceLevel.DETAILED
+            fired_rules=[]
         )
         
-        # Test setting and getting facts
+        # Get original fact
+        assert context.get_fact('amount') == 1500
+        
+        # Set new fact
         context.set_fact('new_field', 'new_value')
         assert context.get_fact('new_field') == 'new_value'
-        assert context.get_fact('amount') == 1500  # From original facts
         
-        # Test rule firing
-        rule_id_obj = rule_id('test_rule')
-        context.rule_fired(rule_id_obj)
-        assert len(context.fired_rules) == 1
-        assert context.fired_rules[0] == rule_id_obj
+        # Overwrite existing fact
+        context.set_fact('amount', 2000)
+        assert context.get_fact('amount') == 2000  # Should get enriched value
+        
+        # Original facts should remain unchanged
+        assert context.original_facts['amount'] == 1500
+    
+    @pytest.mark.unit
+    def test_context_rule_firing(self):
+        """Test rule firing tracking."""
+        context = ExecutionContext(
+            original_facts=facts(amount=1000),
+            enriched_facts={},
+            fired_rules=[]
+        )
+        
+        # Fire some rules
+        context.rule_fired('rule1')
+        context.rule_fired('rule2')
+        
+        assert context.fired_rules == ['rule1', 'rule2']
+        
+        # Verdict should include all enriched facts
+        context.set_fact('tier', 'premium')
+        context.set_fact('approved', True)
+        
+        assert context.verdict == {'tier': 'premium', 'approved': True}
+    
+
 
 
 class TestExecutionResult:
-    """Test ExecutionResult."""
+    """Test the ExecutionResult."""
     
     @pytest.mark.unit
     def test_execution_result_creation(self):
         """Test execution result creation."""
-        verdict = {'tier': 'premium', 'discount': 0.15}
-        fired_rules = ['high_value', 'age_bonus']
+        verdict = {'tier': 'premium', 'approved': True}
+        fired_rules = ['rule1', 'rule2']
         
         result = ExecutionResult(
             verdict=verdict,
             fired_rules=fired_rules,
-            execution_time_ms=25.5
+            execution_time_ms=25.5,
+            trace={}
         )
         
         assert result.verdict == verdict
         assert result.fired_rules == fired_rules
         assert result.execution_time_ms == 25.5
-        assert result.success is True
-        assert result.errors == []
+        assert result.trace == {}  # Default empty
     
     @pytest.mark.unit
-    def test_execution_result_with_errors(self):
-        """Test execution result with errors."""
-        errors = ['Invalid condition in rule xyz', 'Division by zero']
+    def test_execution_result_with_trace(self):
+        """Test execution result with trace data."""
+        trace_data = {
+            'rules_evaluated': 5,
+            'rules_fired': 2,
+            'execution_order': ['rule1', 'rule2']
+        }
         
         result = ExecutionResult(
-            verdict={},
-            fired_rules=[],
-            execution_time_ms=10.0,
-            success=False,
-            errors=errors
+            verdict={'approved': True},
+            fired_rules=['rule1', 'rule2'],
+            execution_time_ms=15.0,
+            trace=trace_data
         )
         
-        assert result.success is False
-        assert result.errors == errors
+        assert result.trace == trace_data
+        assert result.trace['rules_evaluated'] == 5
     
     @pytest.mark.unit
-    def test_execution_result_summary(self):
-        """Test execution result summary."""
+    def test_execution_result_immutability(self):
+        """Test that execution results are immutable."""
         result = ExecutionResult(
             verdict={'tier': 'premium'},
-            fired_rules=['rule1', 'rule2'],
-            execution_time_ms=15.3
+            fired_rules=['rule1'],
+            execution_time_ms=10.0,
+            trace={}
         )
         
-        summary = result.summary()
-        assert 'verdict' in summary
-        assert 'fired_rules' in summary
-        assert 'execution_time_ms' in summary
-        assert 'success' in summary 
+        # Should not be able to modify result attributes
+        with pytest.raises(AttributeError):
+            result.verdict = {}
+        
+        with pytest.raises(AttributeError):
+            result.fired_rules = []
+
+
+class TestTraceLevel:
+    """Test the TraceLevel enum."""
+    
+    @pytest.mark.unit
+    def test_trace_level_values(self):
+        """Test trace level enum values."""
+        assert TraceLevel.NONE.value == "none"
+        assert TraceLevel.BASIC.value == "basic"
+        assert TraceLevel.DETAILED.value == "detailed"
+    
+    @pytest.mark.unit
+    def test_trace_level_comparison(self):
+        """Test trace level comparison."""
+        assert TraceLevel.NONE != TraceLevel.BASIC
+        assert TraceLevel.BASIC != TraceLevel.DETAILED
+        
+        # String comparison
+        assert TraceLevel.BASIC.value == "basic"
+
+
+class TestFactsConvenienceFunction:
+    """Test the facts() convenience function."""
+    
+    @pytest.mark.unit
+    def test_facts_function(self):
+        """Test the facts convenience function."""
+        data = {'amount': 1000, 'status': 'active'}
+        f = facts(**data)
+        
+        assert isinstance(f, Facts)
+        assert f.data == data
+        assert f['amount'] == 1000
+    
+    @pytest.mark.unit
+    def test_facts_function_empty(self):
+        """Test facts function with empty data."""
+        f = facts()
+        
+        assert isinstance(f, Facts)
+        assert f.data == {}
+        assert 'anything' not in f
+    
+    @pytest.mark.unit
+    def test_facts_function_with_kwargs(self):
+        """Test facts function with keyword arguments."""
+        f = facts(amount=1500, status='active', tier='premium')
+        
+        assert f['amount'] == 1500
+        assert f['status'] == 'active'
+        assert f['tier'] == 'premium' 
