@@ -1,82 +1,84 @@
 """
-Symbolica - Deterministic Rule Engine for AI Agents
+Symbolica: Deterministic Rule Engine for AI Agents
 ==================================================
 
-Replace unpredictable LLM reasoning with deterministic, traceable rule execution.
+High-performance rule engine providing deterministic, traceable reasoning
+for AI agents. Replaces unpredictable LLM reasoning with structured,
+explainable decision-making.
 
-Key Benefits:
-- Deterministic: Same inputs → same outputs, every time  
-- Traceable: Full explanation of why decisions were made
-- Scalable: Handles 1000+ rules efficiently using dependency analysis
-- Fast: Sub-millisecond execution for real-time agent decisions
+Core Features:
+- YAML-based rule definition with flexible syntax
+- Comprehensive execution tracing for AI explainability
+- DAG-based dependency resolution for complex rulesets
+- LLM-friendly reasoning explanations
+- Fast AST-based expression evaluation
 
-Quick Start:
-    ```python
-    from symbolica import Engine
+Example Usage:
+    from symbolica import Engine, facts
     
-    rules = '''
+    # Create engine from YAML
+    engine = Engine.from_yaml('''
     rules:
       - id: high_value_customer
-        priority: 100
-        condition: "amount > 1000 and status == 'active'"
+        condition: purchase_amount > 1000
         actions:
           tier: premium
-          discount: 0.15
-    '''
+          discount: 0.1
+    ''')
     
-    engine = Engine.from_yaml(rules)
-    result = engine.reason({"amount": 1500, "status": "active"})
-    print(result.verdict)  # {"tier": "premium", "discount": 0.15}
-    ```
-
-Advanced Loading:
-    ```python
-    # From file
-    engine = Engine.from_file("rules.yaml")
+    # Execute with tracing
+    result = engine.reason(facts(purchase_amount=1500))
     
-    # From directory (recursive)
-    engine = Engine.from_directory("rules/")
+    # Get detailed explanation
+    print(result.explain_reasoning())
     
-    # From YAML string
-    engine = Engine.from_yaml(yaml_content)
-    ```
+    # Get LLM-friendly context
+    llm_context = result.get_llm_context()
 """
 
-# Main engine interface
-from .engine import Engine, from_yaml
-
-# Core domain models  
 from .core import (
-    Rule, Facts, ExecutionResult,
-    SymbolicaError, ValidationError, ExecutionError,
+    # Core models
+    Rule, Facts, ExecutionContext, ExecutionResult,
+    
+    # Enhanced tracing
+    RuleEvaluationTrace, ConditionTrace, FieldAccess, TraceLevel,
+    
+    # Engine
+    Engine,
+    
+    # Exceptions
+    SymbolicaError, ValidationError, EvaluationError,
+    
+    # Factories
     facts
 )
 
-__version__ = "0.2.0"
+# For backward compatibility
+from_yaml = Engine.from_yaml
+
+__version__ = "0.0.3"
 __author__ = "Symbolica Team"
 
 # Minimal public API - only what AI agents need
 __all__ = [
-    # Main interface
-    "Engine", 
-    "from_yaml",
-    
     # Core models
-    "Rule",
-    "Facts",
-    "ExecutionResult",
+    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
+    
+    # Enhanced tracing
+    'RuleEvaluationTrace', 'ConditionTrace', 'FieldAccess', 'TraceLevel',
+    
+    # Engine
+    'Engine',
     
     # Exceptions
-    "SymbolicaError",
-    "ValidationError", 
-    "ExecutionError",
+    'SymbolicaError', 'ValidationError', 'EvaluationError',
+    
+    # Factories
+    'facts', 'from_yaml',
     
     # Metadata
-    "__version__",
-    "__author__",
-    
-    # New from_directory import
-    "facts"
+    '__version__',
+    '__author__'
 ]
 
 

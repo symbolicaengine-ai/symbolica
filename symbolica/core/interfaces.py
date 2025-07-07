@@ -6,15 +6,17 @@ Minimal interfaces for core functionality only.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Set
-from .models import Rule, Facts, ExecutionResult, ExecutionContext
+from typing import Dict, Any, List, Set, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import Rule, Facts, ExecutionResult, ExecutionContext
 
 
 class ConditionEvaluator(ABC):
     """Evaluates rule conditions against facts using AST parsing."""
     
     @abstractmethod
-    def evaluate(self, condition_expr: str, context: ExecutionContext) -> bool:
+    def evaluate(self, condition_expr: str, context: 'ExecutionContext') -> bool:
         """
         Evaluate condition expression against execution context.
         
@@ -45,12 +47,40 @@ class ActionExecutor(ABC):
     """Executes rule actions (simple set operations)."""
     
     @abstractmethod
-    def execute(self, actions: Dict[str, Any], context: ExecutionContext) -> None:
+    def execute(self, actions: Dict[str, Any], context: 'ExecutionContext') -> None:
         """
         Execute actions, modifying the context.
         
         Args:
             actions: Dictionary of key-value pairs to set in context
             context: Execution context to modify
+        """
+        pass
+
+
+class ExecutionStrategy(ABC):
+    """Strategy for executing rules in a specific order."""
+    
+    @abstractmethod
+    def get_execution_order(self, rules: List['Rule']) -> List['Rule']:
+        """
+        Get the order in which rules should be executed.
+        
+        Args:
+            rules: List of rules to order
+            
+        Returns:
+            Rules in execution order
+        """
+        pass
+    
+    @abstractmethod
+    def execute(self, rules: List['Rule'], context: 'ExecutionContext') -> None:
+        """
+        Execute rules using this strategy.
+        
+        Args:
+            rules: List of rules to execute
+            context: Execution context
         """
         pass 

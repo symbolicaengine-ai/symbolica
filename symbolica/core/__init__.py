@@ -1,35 +1,35 @@
 """
-Symbolica Core Module
-====================
+Symbolica Core Package
+=====================
 
-Essential data models and interfaces for AI agent reasoning.
+Core domain models and engine for deterministic AI agent reasoning.
 """
 
-# Core models
-from .models import Rule, Facts, ExecutionResult, ExecutionContext, TraceLevel, facts
-
-# Essential interfaces  
-from .interfaces import ConditionEvaluator, ActionExecutor
-
-# Exceptions
-from .exceptions import SymbolicaError, ValidationError, ExecutionError, EvaluationError
+from .models import (
+    Rule, Facts, ExecutionContext, ExecutionResult, 
+    RuleEvaluationTrace, ConditionTrace, FieldAccess, TraceLevel,
+    facts
+)
+from .engine import Engine
+from .exceptions import SymbolicaError, ValidationError, EvaluationError
+from .interfaces import ConditionEvaluator, ActionExecutor, ExecutionStrategy
 
 __all__ = [
     # Core models
-    "Rule",
-    "Facts", 
-    "ExecutionResult",
-    "ExecutionContext",
-    "TraceLevel",
-    "facts",
+    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
     
-    # Interfaces
-    "ConditionEvaluator",
-    "ActionExecutor",
+    # Enhanced tracing
+    'RuleEvaluationTrace', 'ConditionTrace', 'FieldAccess', 'TraceLevel',
+    
+    # Engine
+    'Engine',
     
     # Exceptions
-    "SymbolicaError",
-    "ValidationError",
-    "ExecutionError", 
-    "EvaluationError"
+    'SymbolicaError', 'ValidationError', 'EvaluationError',
+    
+    # Interfaces
+    'ConditionEvaluator', 'ActionExecutor', 'ExecutionStrategy',
+    
+    # Factories
+    'facts'
 ] 
