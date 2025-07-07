@@ -1,0 +1,52 @@
+rules:
+  - id: high_value_transaction
+    priority: 100
+    if: "amount > 1000 and status == 'active'"
+    then:
+      set:
+        tier: premium
+        risk_level: low
+        discount: 0.15
+
+  - id: fraud_detection
+    priority: 200
+    if:
+      any:
+        - "risk_score > 80"
+        - all:
+          - "amount > 5000"
+          - "country not in ['US', 'CA', 'UK']"
+    then:
+      set:
+        flagged: true
+        review_required: true
+        auto_approve: false
+
+  - id: premium_customer_bonus
+    priority: 80
+    if:
+      all:
+        - "user_type == 'premium'"
+        - "account_balance > 10000"
+        - "risk_score < 30"
+    then:
+      set:
+        bonus_eligible: true
+        bonus_amount: 500
+        priority_support: true
+
+  - id: new_customer_welcome
+    priority: 60
+    if: "account_age_days < 30"
+    then:
+      set:
+        welcome_bonus: 100
+        onboarding_required: true
+
+  - id: international_transaction
+    priority: 70
+    if: "country not in ['US', 'CA']"
+    then:
+      set:
+        international_fee: 25
+        currency_conversion: true 
