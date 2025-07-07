@@ -125,7 +125,24 @@ class ExecutionContext:
         return "\n".join(self.reasoning_steps)
 
 
+@dataclass(frozen=True)
+class Goal:
+    """Simple goal data container - field-value pairs we want to achieve."""
+    target: Dict[str, Any]
+    
+    def __post_init__(self):
+        if not isinstance(self.target, dict) or not self.target:
+            raise ValueError("Goal target must be a non-empty dictionary")
+
+
+
+
+
 # Simple factory functions
 def facts(**data: Any) -> Facts:
     """Create Facts from keyword arguments."""
-    return Facts(data) 
+    return Facts(data)
+
+def goal(**target: Any) -> Goal:
+    """Create Goal from keyword arguments."""
+    return Goal(target) 

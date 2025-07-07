@@ -5,14 +5,14 @@ Symbolica Core Package
 Core domain models and engine for deterministic AI agent reasoning.
 """
 
-from .models import Rule, Facts, ExecutionContext, ExecutionResult, facts
+from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts, goal
 from .engine import Engine
 from .exceptions import SymbolicaError, ValidationError, EvaluationError
 from .interfaces import ConditionEvaluator, ExecutionStrategy
 
 __all__ = [
     # Core models
-    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
+    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult', 'Goal',
     
     # Engine
     'Engine',
@@ -24,5 +24,5 @@ __all__ = [
     'ConditionEvaluator', 'ExecutionStrategy',
     
     # Factories
-    'facts'
+    'facts', 'goal'
 ] 

@@ -11,10 +11,11 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
-from .models import Rule, Facts, ExecutionContext, ExecutionResult, facts
+from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
 from .exceptions import ValidationError
 from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
+from .._internal.backward_chainer import BackwardChainer
 
 
 class Engine:
@@ -25,6 +26,7 @@ class Engine:
         self._rules = rules or []
         self._evaluator = ASTEvaluator()
         self._dag_strategy = DAGStrategy(self._evaluator)
+        self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
         
         if self._rules:
             self._validate_rules()
@@ -107,6 +109,17 @@ class Engine:
         except Exception:
             # Skip rule if evaluation fails
             pass
+    
+    def find_rules_for_goal(self, goal: Goal) -> List[Rule]:
+        """Find rules that can produce the goal (reverse DAG search)."""
+        return self._backward_chainer.find_supporting_rules(goal)
+    
+    def can_achieve_goal(self, goal: Goal, current_facts: Union[Facts, Dict[str, Any]]) -> bool:
+        """Test if goal can be achieved with current facts."""
+        if isinstance(current_facts, dict):
+            current_facts = Facts(current_facts)
+        
+        return self._backward_chainer.can_achieve_goal(goal, current_facts)
     
 
     
