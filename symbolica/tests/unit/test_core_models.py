@@ -197,7 +197,7 @@ class TestExecutionContext:
         assert context.enriched_facts == sample_facts
         assert context.fired_rules == []
         assert context.verdict == {}  # No changes yet
-        assert hasattr(context, 'start_time_ns')
+        assert hasattr(context, 'start_time')
     
     @pytest.mark.unit
     def test_context_fact_operations(self, sample_facts):

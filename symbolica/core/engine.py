@@ -13,8 +13,7 @@ from typing import Dict, Any, List, Optional, Union
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, facts
 from .exceptions import ValidationError
-from .._internal.evaluator import create_evaluator
-from .._internal.executor import SimpleActionExecutor
+from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
 
 
@@ -24,9 +23,8 @@ class Engine:
     def __init__(self, rules: Optional[List[Rule]] = None):
         """Initialize engine with rules."""
         self._rules = rules or []
-        self._evaluator = create_evaluator()
-        self._executor = SimpleActionExecutor()
-        self._dag_strategy = DAGStrategy()
+        self._evaluator = ASTEvaluator()
+        self._dag_strategy = DAGStrategy(self._evaluator)
         
         if self._rules:
             self._validate_rules()
@@ -93,13 +91,16 @@ class Engine:
     def _execute_rule(self, rule: Rule, context: ExecutionContext) -> None:
         """Execute a single rule."""
         try:
-            if self._evaluator.evaluate(rule.condition, context):
+            # Evaluate with trace to get detailed explanation
+            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+            
+            if trace.result:
                 # Apply actions
                 for key, value in rule.actions.items():
                     context.set_fact(key, value)
                 
-                # Record detailed reasoning
-                detailed_reason = self._explain_condition(rule.condition, context)
+                # Record detailed reasoning using trace
+                detailed_reason = trace.explain()
                 actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason)
@@ -107,99 +108,7 @@ class Engine:
             # Skip rule if evaluation fails
             pass
     
-    def _explain_condition(self, condition: str, context: ExecutionContext) -> str:
-        """Explain why a condition was true with actual values."""
-        try:
-            # Handle OR conditions - find which part made it true
-            if ' or ' in condition:
-                parts = [part.strip() for part in condition.split(' or ')]
-                true_parts = []
-                for part in parts:
-                    try:
-                        if self._evaluator.evaluate(part, context):
-                            explained = self._explain_simple_condition(part, context)
-                            true_parts.append(explained)
-                    except:
-                        pass
-                
-                if true_parts:
-                    return f"Condition true because: {' OR '.join(true_parts)}"
-            
-            # Handle AND conditions - show all parts
-            elif ' and ' in condition:
-                parts = [part.strip() for part in condition.split(' and ')]
-                explained_parts = []
-                for part in parts:
-                    try:
-                        explained = self._explain_simple_condition(part, context)
-                        explained_parts.append(explained)
-                    except:
-                        explained_parts.append(f"({part})")
-                
-                return f"Condition true: {' AND '.join(explained_parts)}"
-            
-            # Simple condition
-            else:
-                return self._explain_simple_condition(condition, context)
-                
-        except Exception:
-            return f"Condition '{condition}' was true"
-    
-    def _explain_simple_condition(self, condition: str, context: ExecutionContext) -> str:
-        """Explain a simple condition with actual values."""
-        try:
-            condition = condition.strip('()')
-            
-            # Common comparison operators
-            for op in ['>=', '<=', '==', '!=', '>', '<']:
-                if op in condition:
-                    left, right = condition.split(op, 1)
-                    left, right = left.strip(), right.strip()
-                    
-                    # Get actual value
-                    try:
-                        left_val = self._get_field_value(left, context)
-                        right_val = self._get_field_value(right, context)
-                        return f"{left}({left_val}) {op} {right_val}"
-                    except:
-                        return f"({condition})"
-            
-            # Handle 'in' operator
-            if ' in ' in condition:
-                left, right = condition.split(' in ', 1)
-                left, right = left.strip(), right.strip()
-                try:
-                    left_val = self._get_field_value(left, context)
-                    return f"{left}({left_val}) in {right}"
-                except:
-                    return f"({condition})"
-            
-            # Handle 'not' operator
-            if condition.startswith('not '):
-                sub_condition = condition[4:].strip()
-                return f"NOT({self._explain_simple_condition(sub_condition, context)})"
-            
-            return f"({condition})"
-            
-        except Exception:
-            return f"({condition})"
-    
-    def _get_field_value(self, field: str, context: ExecutionContext) -> Any:
-        """Get the actual value of a field from context."""
-        # Remove quotes if it's a string literal
-        if (field.startswith('"') and field.endswith('"')) or (field.startswith("'") and field.endswith("'")):
-            return field
-        
-        # Try to parse as number
-        try:
-            if '.' in field:
-                return float(field)
-            return int(field)
-        except ValueError:
-            pass
-        
-        # Get from context
-        return context.get_fact(field, field)
+
     
     def _validate_rules(self) -> None:
         """Basic rule validation."""

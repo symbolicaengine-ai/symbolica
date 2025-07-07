@@ -25,13 +25,8 @@ class DAGStrategy(ExecutionStrategy):
     """
     
     def __init__(self, evaluator: Optional['ConditionEvaluator'] = None):
-        self.evaluator = evaluator or self._create_evaluator()
+        self.evaluator = evaluator
         self._dependency_cache: Dict[str, Set[str]] = {}
-    
-    def _create_evaluator(self):
-        """Create evaluator instance."""
-        from .evaluator import create_evaluator
-        return create_evaluator()
     
     def get_execution_order(self, rules: List['Rule']) -> List['Rule']:
         """Get rules in dependency-aware execution order."""
@@ -70,12 +65,16 @@ class DAGStrategy(ExecutionStrategy):
             return self._dependency_cache[rule.id]
         
         try:
-            fields = self.evaluator.extract_fields(rule.condition)
-            self._dependency_cache[rule.id] = fields
-            return fields
+            if self.evaluator:
+                fields = self.evaluator.extract_fields(rule.condition)
+                self._dependency_cache[rule.id] = fields
+                return fields
         except:
-            # Fallback to empty set if extraction fails
-            return set()
+            pass
+        
+        # Fallback to empty set if no evaluator or extraction fails
+        self._dependency_cache[rule.id] = set()
+        return set()
     
     def _topological_sort(self, rules: List['Rule'], graph: Dict[str, Set[str]]) -> List['Rule']:
         """Perform topological sort on rules."""
@@ -120,30 +119,4 @@ class DAGStrategy(ExecutionStrategy):
         
         return result
     
-    def execute(self, rules: List['Rule'], context: 'ExecutionContext') -> None:
-        """Execute rules in dependency-aware order."""
-        # Get execution order
-        execution_order = self.get_execution_order(rules)
-        
-        # Execute each rule
-        for rule in execution_order:
-            try:
-                # Evaluate condition
-                condition_result = self.evaluator.evaluate(rule.condition, context)
-                
-                if condition_result:
-                    # Execute actions
-                    for key, value in rule.actions.items():
-                        context.set_fact(key, value)
-                    
-                    # Record that rule fired
-                    context.rule_fired(rule.id)
-                    
-            except Exception:
-                # Continue with next rule if evaluation fails
-                continue
-
-
-def create_dag_strategy() -> DAGStrategy:
-    """Factory function to create DAG strategy."""
-    return DAGStrategy() 
+ 
