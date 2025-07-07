@@ -38,25 +38,23 @@ class DAGStrategy(ExecutionStrategy):
         return self._topological_sort(rules, graph)
     
     def _build_dependency_graph(self, rules: List['Rule']) -> Dict[str, Set[str]]:
-        """Build dependency graph from rules."""
+        """Build dependency graph from rules including field dependencies and rule chaining."""
         graph = defaultdict(set)
         
         # Create mapping from rule ID to rule
         rule_map = {rule.id: rule for rule in rules}
         
         for rule in rules:
-            # Get fields this rule depends on
-            depends_on = self._get_rule_dependencies(rule)
-            
-            # Find rules that provide these fields
-            for other_rule in rules:
-                if other_rule.id == rule.id:
-                    continue
-                
-                # Check if other rule provides fields this rule depends on
-                provides = set(other_rule.actions.keys())
-                if depends_on & provides:
-                    graph[rule.id].add(other_rule.id)
+            # Skip field-based dependencies for now to avoid circular dependencies
+            # The explicit trigger relationships will handle proper ordering
+            pass
+        
+        # Add explicit rule chaining dependencies
+        for rule in rules:
+            for triggered_rule_id in getattr(rule, 'triggers', []):
+                if triggered_rule_id in rule_map:
+                    # Triggered rule depends on the triggering rule
+                    graph[triggered_rule_id].add(rule.id)
         
         return graph
     

@@ -19,6 +19,7 @@ class Rule:
     condition: str  # Expression string for AST evaluation
     actions: Dict[str, Any]  # Simple key-value actions
     tags: List[str] = field(default_factory=list)  # Rule metadata tags
+    triggers: List[str] = field(default_factory=list)  # Rules to trigger when this rule succeeds
     
     def __post_init__(self):
         if not self.id or not isinstance(self.id, str):
@@ -31,6 +32,8 @@ class Rule:
             raise ValueError("Actions must be a non-empty dictionary")
         if not isinstance(self.tags, list):
             raise ValueError("Tags must be a list")
+        if not isinstance(self.triggers, list):
+            raise ValueError("Triggers must be a list")
 
 
 @dataclass(frozen=True)
@@ -107,10 +110,13 @@ class ExecutionContext:
         """Get a fact from the context."""
         return self.enriched_facts.get(key, default)
     
-    def rule_fired(self, rule_id: str, reason: str) -> None:
+    def rule_fired(self, rule_id: str, reason: str, triggered_by: Optional[str] = None) -> None:
         """Record that a rule fired with simple reasoning."""
         self.fired_rules.append(rule_id)
-        self.reasoning_steps.append(f"✓ {rule_id}: {reason}")
+        if triggered_by:
+            self.reasoning_steps.append(f"✓ {rule_id}: {reason} (triggered by {triggered_by})")
+        else:
+            self.reasoning_steps.append(f"✓ {rule_id}: {reason}")
     
     @property
     def verdict(self) -> Dict[str, Any]:
