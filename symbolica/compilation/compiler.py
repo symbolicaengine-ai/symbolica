@@ -230,7 +230,7 @@ def compile_rules(source: Union[str, pathlib.Path, List[Dict[str, Any]]],
     Compile rules from various sources.
     
     Args:
-        source: File path, directory path, or list of rule dictionaries
+        source: File path, directory path, YAML string, or list of rule dictionaries
         strict: Enable strict validation mode
         optimize: Enable optimization passes
     
@@ -242,21 +242,35 @@ def compile_rules(source: Union[str, pathlib.Path, List[Dict[str, Any]]],
     if isinstance(source, list):
         return compiler.compile_rules(source)
     
-    source_path = pathlib.Path(source)
+    # Convert to string if it's a Path object
+    source_str = str(source)
     
-    if source_path.is_file():
-        return compiler.compile_file(source_path)
-    elif source_path.is_dir():
-        return compiler.compile_directory(source_path)
-    else:
-        # Try as YAML string
+    # Check if source looks like YAML content (contains newlines and YAML keywords)
+    if '\n' in source_str and ('rules:' in source_str or 'rule:' in source_str):
+        # Treat as YAML string
+        return compiler.compile_string(source_str)
+    
+    # Otherwise, treat as file/directory path
+    try:
+        source_path = pathlib.Path(source_str)
+        
+        if source_path.is_file():
+            return compiler.compile_file(source_path)
+        elif source_path.is_dir():
+            return compiler.compile_directory(source_path)
+        else:
+            # Path doesn't exist, try as YAML string as fallback
+            return compiler.compile_string(source_str)
+            
+    except (OSError, ValueError) as e:
+        # Path is invalid (e.g., too long), try as YAML string
         try:
-            return compiler.compile_string(str(source))
-        except Exception as e:
+            return compiler.compile_string(source_str)
+        except Exception as yaml_e:
             return CompilationResult(
                 success=False,
                 rule_set=None,
-                errors=[f"Invalid source: {source} - {e}"],
+                errors=[f"Invalid source - not a valid path or YAML: {yaml_e}"],
                 warnings=[],
                 stats={}
             )

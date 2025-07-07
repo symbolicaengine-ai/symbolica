@@ -163,7 +163,7 @@ class Engine:
         
         try:
             # Create immutable facts
-            input_facts = facts(facts_data)
+            input_facts = facts(**facts_data)
             
             # Execute using selected strategy
             result = self._strategy.execute(
@@ -191,7 +191,7 @@ class Engine:
         Returns:
             True if condition is satisfied
         """
-        input_facts = facts(facts_data)
+        input_facts = facts(**facts_data)
         from ..core import ExecutionContext, TraceLevel
         
         context = ExecutionContext(
