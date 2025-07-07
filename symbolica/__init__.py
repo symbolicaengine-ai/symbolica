@@ -36,7 +36,7 @@ Example Usage:
 
 from .core import (
     # Core models
-    Rule, Facts, ExecutionContext, ExecutionResult,
+    Rule, Facts, ExecutionContext, ExecutionResult, Goal,
     
     # Engine
     Engine,
@@ -45,7 +45,7 @@ from .core import (
     SymbolicaError, ValidationError, EvaluationError,
     
     # Factories
-    facts
+    facts, goal
 )
 
 # For backward compatibility
@@ -57,7 +57,7 @@ __author__ = "Symbolica Team"
 # Minimal public API - only what AI agents need
 __all__ = [
     # Core models
-    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult',
+    'Rule', 'Facts', 'ExecutionContext', 'ExecutionResult', 'Goal',
     
     # Engine
     'Engine',
@@ -66,7 +66,7 @@ __all__ = [
     'SymbolicaError', 'ValidationError', 'EvaluationError',
     
     # Factories
-    'facts', 'from_yaml',
+    'facts', 'goal', 'from_yaml',
     
     # Metadata
     '__version__',
