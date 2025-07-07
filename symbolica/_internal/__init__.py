@@ -1,11 +1,16 @@
 """
-Internal Implementation
-======================
+Symbolica Internal Module
+=========================
 
-Internal components - not part of the public API.
-These modules implement the core functionality.
+Internal implementation components for AI agent reasoning.
 """
 
-# Don't export anything from this module
-# Internal components should be imported directly where needed
-__all__ = [] 
+from .evaluator import create_evaluator
+from .executor import create_executor
+from .dag import create_dag_strategy
+
+__all__ = [
+    "create_evaluator",
+    "create_executor", 
+    "create_dag_strategy"
+] 

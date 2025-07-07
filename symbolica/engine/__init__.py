@@ -1,15 +1,10 @@
 """
-Symbolica Engine
-===============
+Symbolica Engine Module
+=======================
 
-Main inference engine for AI agents.
+Main inference engine for AI agent reasoning.
 """
 
-from .inference import Engine, quick_reason, create_simple_rule, from_yaml
+from .engine import Engine, from_yaml
 
-__all__ = [
-    "Engine",
-    "quick_reason", 
-    "create_simple_rule",
-    "from_yaml",
-] 
+__all__ = ["Engine", "from_yaml"] 
