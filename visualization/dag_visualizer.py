@@ -19,7 +19,7 @@ class DAGVisualizer:
         self.execution_order = self._compute_execution_order()
     
     def _build_dependencies(self) -> Dict[str, Set[str]]:
-        """Build dependency graph based on rule priorities and conditions."""
+        """Build dependency graph based on rule priorities, conditions, and chaining."""
         dependencies = defaultdict(set)
         
         # Sort rules by priority (higher priority = executed first)
@@ -37,6 +37,14 @@ class DAGVisualizer:
                 other_actions = self._extract_fields_from_actions(other_rule.actions)
                 if rule_fields.intersection(other_actions):
                     dependencies[rule.id].add(other_rule.id)
+        
+        # Add explicit rule chaining dependencies
+        rule_map = {rule.id: rule for rule in self.rules}
+        for rule in self.rules:
+            for triggered_rule_id in getattr(rule, 'triggers', []):
+                if triggered_rule_id in rule_map:
+                    # Triggered rule depends on the triggering rule
+                    dependencies[triggered_rule_id].add(rule.id)
         
         return dict(dependencies)
     
@@ -141,7 +149,7 @@ class DAGVisualizer:
                 print(f"  - {rule_id} [priority: {rule.priority}]{deps_str}")
     
     def print_dependency_graph(self) -> None:
-        """Print the full dependency graph."""
+        """Print the full dependency graph including rule chaining."""
         print("\nRule Dependency Graph:")
         print("=" * 50)
         
@@ -149,9 +157,16 @@ class DAGVisualizer:
         
         for rule_id in sorted(graph.keys()):
             node = graph[rule_id]
+            rule = node['rule']
+            
             print(f"\n{rule_id}:")
             print(f"  Priority: {node['priority']}")
             print(f"  Level: {node['level']}")
+            
+            # Show triggers (rules this one will trigger)
+            triggers = getattr(rule, 'triggers', [])
+            if triggers:
+                print(f"  Triggers: {', '.join(triggers)}")
             
             if node['dependencies']:
                 print(f"  Depends on: {', '.join(sorted(node['dependencies']))}")
@@ -159,11 +174,11 @@ class DAGVisualizer:
             if node['dependents']:
                 print(f"  Required by: {', '.join(sorted(node['dependents']))}")
             
-            if not node['dependencies'] and not node['dependents']:
+            if not node['dependencies'] and not node['dependents'] and not triggers:
                 print("  Independent rule")
     
     def to_graphviz(self) -> str:
-        """Generate Graphviz DOT format for visualization."""
+        """Generate Graphviz DOT format for visualization including rule chaining."""
         lines = ["digraph RuleDependencies {"]
         lines.append("  rankdir=TB;")
         lines.append("  node [shape=box, style=rounded];")
@@ -176,12 +191,25 @@ class DAGVisualizer:
             for rule_id in rules:
                 rule = self.rule_map[rule_id]
                 label = f"{rule_id}\\npriority: {rule.priority}"
+                # Add triggers info to label if present
+                triggers = getattr(rule, 'triggers', [])
+                if triggers:
+                    label += f"\\ntriggers: {len(triggers)}"
                 lines.append(f'  "{rule_id}" [label="{label}", fillcolor="{color}", style="filled,rounded"];')
         
-        # Add edges
+        # Add dependency edges (solid lines)
         for rule_id, deps in self.dependencies.items():
             for dep in deps:
-                lines.append(f'  "{dep}" -> "{rule_id}";')
+                # Check if this is a trigger relationship
+                dep_rule = self.rule_map.get(dep)
+                is_trigger = dep_rule and rule_id in getattr(dep_rule, 'triggers', [])
+                
+                if is_trigger:
+                    # Trigger relationships use dashed blue arrows
+                    lines.append(f'  "{dep}" -> "{rule_id}" [color=blue, style=dashed, label="triggers"];')
+                else:
+                    # Regular dependencies use solid black arrows
+                    lines.append(f'  "{dep}" -> "{rule_id}";')
         
         # Add level grouping
         for level, rules in enumerate(self.execution_order):

@@ -76,10 +76,17 @@ class Engine:
             fired_rules=[]
         )
         
-        # Execute rules in priority order
+        # Execute rules in dependency-aware order (includes chaining)
         execution_order = self._dag_strategy.get_execution_order(self._rules)
+        triggered_rules = set()  # Track which rules were triggered
+        
         for rule in execution_order:
-            self._execute_rule(rule, context)
+            # Check if this rule was triggered by another rule
+            triggered_by = self._find_triggering_rule(rule, context.fired_rules)
+            if triggered_by:
+                triggered_rules.add(rule.id)
+            
+            self._execute_rule(rule, context, triggered_by)
         
         # Build result
         execution_time_ms = (time.perf_counter() - start_time) * 1000
@@ -90,7 +97,7 @@ class Engine:
             reasoning=context.reasoning
         )
     
-    def _execute_rule(self, rule: Rule, context: ExecutionContext) -> None:
+    def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> None:
         """Execute a single rule."""
         try:
             # Evaluate with trace to get detailed explanation
@@ -105,10 +112,18 @@ class Engine:
                 detailed_reason = trace.explain()
                 actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
-                context.rule_fired(rule.id, reason)
+                context.rule_fired(rule.id, reason, triggered_by)
         except Exception:
             # Skip rule if evaluation fails
             pass
+    
+    def _find_triggering_rule(self, rule: Rule, fired_rules: List[str]) -> Optional[str]:
+        """Find which rule triggered this rule, if any."""
+        for fired_rule_id in fired_rules:
+            fired_rule = next((r for r in self._rules if r.id == fired_rule_id), None)
+            if fired_rule and rule.id in fired_rule.triggers:
+                return fired_rule_id
+        return None
     
     def find_rules_for_goal(self, goal: Goal) -> List[Rule]:
         """Find rules that can produce the goal (reverse DAG search)."""
@@ -124,10 +139,49 @@ class Engine:
 
     
     def _validate_rules(self) -> None:
-        """Basic rule validation."""
+        """Basic rule validation including chaining validation."""
         rule_ids = [rule.id for rule in self._rules]
         if len(rule_ids) != len(set(rule_ids)):
             raise ValidationError("Duplicate rule IDs found")
+        
+        # Validate rule chaining
+        self._validate_rule_chaining()
+    
+    def _validate_rule_chaining(self) -> None:
+        """Validate rule chaining to prevent circular dependencies."""
+        rule_ids = {rule.id for rule in self._rules}
+        
+        # Check that all triggered rules exist
+        for rule in self._rules:
+            for triggered_id in rule.triggers:
+                if triggered_id not in rule_ids:
+                    raise ValidationError(f"Rule '{rule.id}' triggers unknown rule '{triggered_id}'")
+        
+        # Check for circular dependencies using DFS
+        def has_cycle(start_rule_id: str, visited: set, path: set) -> bool:
+            if start_rule_id in path:
+                return True
+            if start_rule_id in visited:
+                return False
+            
+            visited.add(start_rule_id)
+            path.add(start_rule_id)
+            
+            # Find the rule with this ID
+            rule = next((r for r in self._rules if r.id == start_rule_id), None)
+            if rule:
+                for triggered_id in rule.triggers:
+                    if has_cycle(triggered_id, visited, path):
+                        return True
+            
+            path.remove(start_rule_id)
+            return False
+        
+        visited = set()
+        for rule in self._rules:
+            if rule.id not in visited:
+                if has_cycle(rule.id, visited, set()):
+                    raise ValidationError(f"Circular dependency detected in rule chaining involving rule '{rule.id}'")
     
     @staticmethod
     def _parse_yaml_rules(yaml_content: str) -> List[Rule]:
@@ -154,7 +208,8 @@ class Engine:
                 priority=rule_dict.get('priority', 0),
                 condition=condition,
                 actions=actions,
-                tags=rule_dict.get('tags', [])
+                tags=rule_dict.get('tags', []),
+                triggers=rule_dict.get('triggers', [])
             )
             rules.append(rule)
         

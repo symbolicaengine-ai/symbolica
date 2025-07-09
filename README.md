@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-sub--millisecond-brightgreen.svg)](https://github.com/anibjoshi/symbolica)
 
+
 **Symbolica** is a rule engine for AI agents that need deterministic, explainable reasoning. Replace unreliable LLM reasoning with fast, consistent rule evaluation.
 
 ## Why Symbolica?
@@ -34,7 +35,6 @@ pip install symbolica
 ## Quick Start
 
 ### Define Rules
-
 ```yaml
 rules:
   - id: "vip_customer"
@@ -61,8 +61,8 @@ rules:
     tags: ["risk", "rejection"]
 ```
 
-### Execute Rules
 
+### Execute Rules
 ```python
 from symbolica import Engine, facts
 
@@ -83,6 +83,7 @@ result = engine.reason(customer)
 print(f"Approved: {result.verdict['approved']}")
 print(f"Credit Limit: ${result.verdict['credit_limit']:,}")
 print(f"Execution Time: {result.execution_time_ms:.2f}ms")
+
 print(f"Reasoning: {result.reasoning}")
 ```
 
@@ -103,6 +104,7 @@ llm_context = result.get_llm_context()
 prompt = f"""
 Customer approval decision:
 {llm_context['verdict']}
+
 
 Reasoning: {llm_context['reasoning']}
 Rules fired: {llm_context['fired_rules']}
@@ -241,7 +243,6 @@ print(f"Rate: {1000/elapsed:.0f} executions/second")
 ```
 
 ## Architecture
-
 Symbolica uses a clean, focused architecture:
 
 ```
@@ -340,7 +341,6 @@ try:
 except EvaluationError as e:
     print(f"Evaluation failed: {e}")
 ```
-
 ## Examples
 
 Check out the [examples/](examples/) directory:
@@ -371,6 +371,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/anibjoshi/symbolica/issues)
+- **Documentation**: [Read the Docs](https://symbolica.readthedocs.io)
 - **Repository**: [GitHub](https://github.com/anibjoshi/symbolica)
 
 ---
