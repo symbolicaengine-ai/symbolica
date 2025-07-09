@@ -9,7 +9,7 @@ Focused on clear LLM explainability without overengineering.
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
 from .exceptions import ValidationError
@@ -30,6 +30,29 @@ class Engine:
         
         if self._rules:
             self._validate_rules()
+    
+    def register_function(self, name: str, func: Callable) -> None:
+        """Register a custom function for use in rule conditions.
+        
+        Args:
+            name: Function name to use in conditions
+            func: Callable function (lambda or regular function)
+            
+        Example:
+            engine.register_function("risk_score", lambda score: 
+                "low" if score > 750 else "high" if score < 600 else "medium")
+            
+            # Use in rule: "risk_score(credit_score) == 'low'"
+        """
+        self._evaluator.register_function(name, func)
+    
+    def unregister_function(self, name: str) -> None:
+        """Remove a registered custom function."""
+        self._evaluator.unregister_function(name)
+    
+    def list_functions(self) -> Dict[str, str]:
+        """List all available functions (built-in + custom)."""
+        return self._evaluator.list_functions()
     
     @classmethod
     def from_yaml(cls, yaml_content: str) -> 'Engine':
