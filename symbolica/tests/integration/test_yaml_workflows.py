@@ -157,7 +157,7 @@ rules:
         assert result.verdict['customer_processed'] is True
         assert result.verdict['product_processed'] is True
     
-    @pytest.mark.integration 
+    @pytest.mark.integration
     def test_structured_conditions_workflow(self):
         """Test workflow with structured conditions (all/any/not)."""
         structured_yaml = """
@@ -237,7 +237,7 @@ rules:
     if: "amount > 100"
     then:
       level: standard
-      
+        
   - id: high_priority
     priority: 100
     if: "amount > 100"

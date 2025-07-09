@@ -50,8 +50,8 @@ rules:
     priority: 100
     if: "amount > 1000 and status == 'active'"
     then:
-      tier: premium
-      discount: 0.15
+        tier: premium
+        discount: 0.15
     tags: [customer, premium]
         
   - id: risk_assessment
@@ -61,16 +61,16 @@ rules:
         - "risk_score < 50"
         - "country in ['US', 'CA', 'UK']"
     then:
-      approved: true
-      risk_level: low
+        approved: true
+        risk_level: low
     tags: [risk, approval]
         
   - id: account_bonus
     priority: 80
     if: "account_balance > 5000 and user_type == 'premium'"
     then:
-      bonus_eligible: true
-      bonus_amount: 100
+        bonus_eligible: true
+        bonus_amount: 100
     tags: [bonus, reward]
 """
 
@@ -91,8 +91,8 @@ rules:
           - "user_type == 'premium'"
           - "account_balance > 10000"
     then:
-      approved: true
-      approval_reason: "high_value_or_premium"
+        approved: true
+        approval_reason: "high_value_or_premium"
     tags: [approval, complex]
         
   - id: fraud_detection
@@ -105,8 +105,8 @@ rules:
           - "country not in ['US', 'CA']"
           - "age < 21"
     then:
-      flagged: true
-      review_required: true
+        flagged: true
+        review_required: true
     tags: [fraud, security]
       
   - id: nested_logic
@@ -241,7 +241,7 @@ INVALID_YAML_SAMPLES = [
 rules:
   - if: "amount > 1000"
     then:
-      tier: premium
+        tier: premium
 """,
     # Invalid YAML syntax
     """
@@ -249,8 +249,8 @@ rules:
   - id: test
     if: amount > 1000
     then:
-      tier: premium
-      invalid: [unclosed list
+        tier: premium
+        invalid: [unclosed list
 """,
     # Empty rules
     """
