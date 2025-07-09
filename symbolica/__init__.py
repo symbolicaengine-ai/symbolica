@@ -20,7 +20,7 @@ Example Usage:
       - id: high_value_customer
         condition: purchase_amount > 1000
         actions:
-          tier: premium
+            tier: premium
           discount: 0.1
     ''')
     

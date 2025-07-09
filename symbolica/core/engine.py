@@ -162,17 +162,55 @@ class Engine:
     
     @staticmethod
     def _convert_condition(condition_dict: Dict[str, Any]) -> str:
-        """Convert structured condition to simple string."""
-        if 'all' in condition_dict:
-            conditions = [f"({c})" for c in condition_dict['all']]
-            return " and ".join(conditions)
-        elif 'any' in condition_dict:
-            conditions = [f"({c})" for c in condition_dict['any']]
-            return " or ".join(conditions)
-        elif 'not' in condition_dict:
-            return f"not ({condition_dict['not']})"
-        else:
-            return str(condition_dict)
+        """Convert structured condition to evaluatable string expression."""
+        def _process_condition_node(node: Any) -> str:
+            """Recursively process condition nodes."""
+            if isinstance(node, str):
+                # Base case: string condition
+                return node.strip()
+            
+            elif isinstance(node, dict):
+                # Structured condition node
+                if not node:
+                    raise ValidationError("Empty condition dictionary")
+                
+                # Handle multiple keys at same level (combine with AND)
+                subconditions = []
+                for key, value in node.items():
+                    
+                    if key == 'all':
+                        if not isinstance(value, list) or not value:
+                            raise ValidationError("'all' must contain a non-empty list of conditions")
+                        conditions = [f"({_process_condition_node(item)})" for item in value]
+                        subconditions.append(" and ".join(conditions))
+                    
+                    elif key == 'any':
+                        if not isinstance(value, list) or not value:
+                            raise ValidationError("'any' must contain a non-empty list of conditions")
+                        conditions = [f"({_process_condition_node(item)})" for item in value]
+                        subconditions.append(f"({' or '.join(conditions)})")
+                    
+                    elif key == 'not':
+                        if value is None or value == "":
+                            raise ValidationError("'not' must contain a valid condition")
+                        subconditions.append(f"not ({_process_condition_node(value)})")
+                    
+                    else:
+                        raise ValidationError(f"Unknown structured condition key: '{key}'. Valid keys are: all, any, not")
+                
+                # Combine all subconditions with AND
+                if len(subconditions) == 1:
+                    return subconditions[0]
+                else:
+                    return " and ".join([f"({cond})" for cond in subconditions])
+            
+            elif isinstance(node, list):
+                raise ValidationError("Lists must be contained within 'all' or 'any' structures")
+            
+            else:
+                raise ValidationError(f"Invalid condition node type: {type(node)}. Must be string or dict")
+        
+        return _process_condition_node(condition_dict)
     
     @property
     def rules(self) -> List[Rule]:

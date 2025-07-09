@@ -61,4 +61,4 @@ class EvaluationError(ExecutionError):
             parts.append(f"Expression: {self.expression}")
         if self.rule_id:
             parts.append(f"Rule: {self.rule_id}")
-        return " | ".join(parts) 
+        return " | ".join(parts)
