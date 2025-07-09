@@ -16,6 +16,7 @@ from .exceptions import ValidationError
 from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
 from .._internal.backward_chainer import BackwardChainer
+from .._internal.temporal_store import TemporalStore
 
 class Engine:
     """Simple rule engine for AI agents."""
@@ -26,6 +27,10 @@ class Engine:
         self._evaluator = ASTEvaluator()
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
+        self._temporal_store = TemporalStore()
+        
+        # Register temporal functions as safe lambdas
+        self._register_temporal_functions()
         
         if self._rules:
             self._validate_rules()
@@ -184,7 +189,60 @@ class Engine:
         
         return self._backward_chainer.can_achieve_goal(goal, current_facts)
     
-
+    def _register_temporal_functions(self) -> None:
+        """Register temporal functions as safe lambda functions."""
+        # Time-series aggregation functions
+        self.register_function("recent_avg", lambda key, duration: self._temporal_store.avg_in_window(key, duration))
+        self.register_function("recent_max", lambda key, duration: self._temporal_store.max_in_window(key, duration))
+        self.register_function("recent_min", lambda key, duration: self._temporal_store.min_in_window(key, duration))
+        self.register_function("recent_count", lambda key, duration: self._temporal_store.count_in_window(key, duration))
+        
+        # Sustained condition function
+        self.register_function("sustained", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '>'))
+        self.register_function("sustained_above", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '>'))
+        self.register_function("sustained_below", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '<'))
+        
+        # TTL facts
+        self.register_function("ttl_fact", lambda key: self._temporal_store.get_ttl_fact(key))
+        self.register_function("has_ttl_fact", lambda key: self._temporal_store.get_ttl_fact(key) is not None)
+    
+    def store_datapoint(self, key: str, value: float, timestamp: Optional[float] = None) -> None:
+        """
+        Store a time-series data point for use in temporal functions.
+        
+        Args:
+            key: Metric key (e.g., 'cpu_utilization', 'error_rate')
+            value: Numeric value
+            timestamp: Optional timestamp (defaults to current time)
+            
+        Example:
+            engine.store_datapoint("cpu_utilization", 85.2)
+            engine.store_datapoint("response_time", 450)
+        """
+        self._temporal_store.store_datapoint(key, value, timestamp)
+    
+    def set_ttl_fact(self, key: str, value: Any, ttl_seconds: int) -> None:
+        """
+        Set a fact with time-to-live (TTL).
+        
+        Args:
+            key: Fact key
+            value: Fact value (any type)
+            ttl_seconds: Time to live in seconds
+            
+        Example:
+            engine.set_ttl_fact("maintenance_mode", True, 3600)  # 1 hour
+            engine.set_ttl_fact("user_session", user_data, 1800)  # 30 minutes
+        """
+        self._temporal_store.set_ttl_fact(key, value, ttl_seconds)
+    
+    def get_temporal_stats(self) -> Dict[str, Any]:
+        """Get temporal store statistics."""
+        return self._temporal_store.get_stats()
+    
+    def cleanup_temporal_data(self) -> Dict[str, int]:
+        """Force cleanup of old temporal data. Returns cleanup statistics."""
+        return self._temporal_store.cleanup_old_data()
     
     def _validate_rules(self) -> None:
         """Basic rule validation including chaining validation."""
