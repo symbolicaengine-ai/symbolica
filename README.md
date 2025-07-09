@@ -20,6 +20,8 @@ AI agents need **deterministic logic** for critical decisions. Instead of hoping
 ## Key Features
 
 - **Sub-millisecond execution** - 6,000+ executions per second
+- **Custom functions** - Extend rules with safe lambda functions for complex business logic
+- **Temporal functions** - Time-series analysis and pattern detection for monitoring & alerting
 - **Clean explanations** - Perfect for LLM integration
 - **Rule chaining** - Create workflows by triggering rules
 - **Backward chaining** - Find which rules can achieve goals
@@ -217,15 +219,99 @@ engine = Engine.from_yaml(["approval.yaml", "pricing.yaml", "notifications.yaml"
 
 ### Custom Functions
 
+Extend rules with safe lambda functions for complex business logic:
+
 ```python
-# Register custom functions
-engine.register_function("risk_score", lambda score: 
-    "low" if score > 750 else "high" if score < 600 else "medium"
-)
+from symbolica import Engine, facts
+
+# Register custom functions (lambdas are safe by default)
+engine = Engine()
+engine.register_function("risk_score", lambda credit: "low" if credit > 700 else "high")
+engine.register_function("fraud_check", lambda amount, history: amount > history * 3)
 
 # Use in rules
-condition: "risk_score(credit_score) == 'low'"
+rules_yaml = """
+rules:
+  - id: approve_loan
+    condition: "risk_score(credit_score) == 'low' and fraud_check(amount, avg_transaction) == False"
+    actions:
+      approved: true
+      interest_rate: 0.05
+"""
+
+engine = Engine.from_yaml(rules_yaml)
+engine.register_function("risk_score", lambda credit: "low" if credit > 700 else "high")
+engine.register_function("fraud_check", lambda amount, history: amount > history * 3)
+
+result = engine.reason(facts(credit_score=750, amount=5000, avg_transaction=2000))
+print(result.verdict)  # {'approved': True, 'interest_rate': 0.05}
 ```
+
+**Safety Features:**
+- Lambda functions only by default (prevents infinite loops)
+- Full functions require explicit `allow_unsafe=True` flag
+- Function failures don't crash the rule engine
+- Comprehensive input validation
+
+### Temporal Functions
+
+Monitor time-series data and detect patterns over time:
+
+```python
+from symbolica import Engine, facts
+
+# Infrastructure monitoring rules
+monitoring_rules = """
+rules:
+  - id: cpu_sustained_high
+    condition: "sustained_above('cpu_utilization', 90, 600)"  # >90% for 10 minutes
+    actions:
+      alert: "CPU sustained high"
+      severity: "critical"
+      
+  - id: memory_trending_up
+    condition: "recent_avg('memory_usage', 300) > 85"  # Average >85% in 5 minutes
+    actions:
+      alert: "Memory trending high"
+      severity: "warning"
+      
+  - id: rate_limit_check
+    condition: "recent_count('api_calls', 60) > 100"  # >100 calls in 1 minute
+    actions:
+      rate_limited: true
+      retry_after: 60
+"""
+
+engine = Engine.from_yaml(monitoring_rules)
+
+# Feed time-series data
+for i in range(20):
+    engine.store_datapoint("cpu_utilization", 95.0)  # Sustained high CPU
+    engine.store_datapoint("memory_usage", 88.0)     # High memory
+    engine.store_datapoint("api_calls", 1)           # API call counter
+
+# Evaluate rules
+result = engine.reason(facts())
+print(result.verdict)
+# Output: {'alert': 'CPU sustained high', 'severity': 'critical', 'rate_limited': True}
+```
+
+**Available Temporal Functions:**
+- `recent_avg(key, duration)` - Average value in time window
+- `recent_max(key, duration)` - Maximum value in time window  
+- `recent_min(key, duration)` - Minimum value in time window
+- `recent_count(key, duration)` - Count of data points in time window
+- `sustained_above(key, threshold, duration)` - Check if value stayed above threshold
+- `sustained_below(key, threshold, duration)` - Check if value stayed below threshold
+- `ttl_fact(key)` - Get TTL fact (returns None if expired)
+- `has_ttl_fact(key)` - Check if TTL fact exists and is valid
+
+**Perfect for:**
+- Infrastructure monitoring and alerting
+- Session management with TTL
+- Rate limiting and throttling
+- SLA monitoring and compliance
+- Fraud detection patterns
 
 ### Performance Testing
 
@@ -348,6 +434,8 @@ Check out the [examples/](examples/) directory:
 - **[basic_example.py](examples/basic_example.py)** - Simple customer approval
 - **[enhanced_structured_conditions_example.py](examples/enhanced_structured_conditions_example.py)** - Complex nested logic
 - **[simple_backward_search_example.py](examples/simple_backward_search_example.py)** - Goal-directed reasoning
+- **[custom_functions_example.py](examples/custom_functions_example.py)** - Custom business logic functions
+- **[temporal_functions_example.py](examples/temporal_functions_example.py)** - Time-series monitoring and alerting
 
 ## Performance
 
@@ -355,6 +443,8 @@ Check out the [examples/](examples/) directory:
 - **6,000+ executions per second** on standard hardware  
 - **Linear scaling** up to 1000+ rules
 - **Minimal memory footprint**
+- **Temporal functions** maintain performance with efficient in-memory time-series storage
+- **Custom functions** integrate seamlessly with zero performance impact
 
 ## Contributing
 
