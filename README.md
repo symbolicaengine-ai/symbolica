@@ -1,801 +1,378 @@
-# Symbolica: Enterprise Rule Engine for AI Agents
+# Symbolica: Deterministic Rule Engine for AI Agents
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Development Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg)](https://github.com/symbolica/symbolica)
-[![Performance](https://img.shields.io/badge/performance-sub--millisecond-brightgreen.svg)](https://github.com/symbolica/symbolica)
-[![Features](https://img.shields.io/badge/features-enterprise%20grade-blue.svg)](https://github.com/symbolica/symbolica)
+[![Performance](https://img.shields.io/badge/performance-sub--millisecond-brightgreen.svg)](https://github.com/anibjoshi/symbolica)
 
-**Symbolica** is an enterprise-grade, high-performance rule engine designed specifically for AI applications. It provides clean, declarative rule definitions with sub-millisecond execution, intelligent caching, hot-reload capabilities, and comprehensive debugging tools.
+**Symbolica** is a rule engine for AI agents that need deterministic, explainable reasoning. Replace unreliable LLM reasoning with fast, consistent rule evaluation.
 
-> **🎉 New in v1.0:** Advanced features including rule serialization, hot-reload, enhanced validation with contextual error messages, deep tracing & debugging, and DAG-based parallel execution with conflict resolution.
+## Why Symbolica?
 
-## 🚀 **What is Symbolica?**
+AI agents need **deterministic logic** for critical decisions. Instead of hoping an LLM will reason correctly, define your logic once and get consistent results every time.
 
-Symbolica is a **business rule engine** that allows you to:
+**Perfect for:**
+- **AI Agent Decision Making** - Replace LLM reasoning with reliable rules
+- **Business Logic** - Customer approval, pricing, risk assessment  
+- **Workflow Automation** - Multi-step processes with rule chaining
+- **Compliance** - Policy enforcement with audit trails
 
-- **Define complex business logic** using simple YAML or Python
-- **Execute rules deterministically** with guaranteed consistency
-- **Cache results intelligently** with content-based hashing
-- **Scale to thousands of rules** with optimized execution strategies
-- **Integrate seamlessly** with AI agents and decision systems
+## Key Features
 
-### **Perfect for:**
-- 🤖 **AI Agent Decision Making** - Complex reasoning workflows
-- 📊 **Business Rule Management** - Customer approval, pricing, risk assessment
-- 🔄 **Workflow Automation** - Conditional processing and routing
-- 🎯 **Content Personalization** - Dynamic content and recommendations
-- 🛡️ **Compliance & Governance** - Policy enforcement and validation
+- **Sub-millisecond execution** - 6,000+ executions per second
+- **Clean explanations** - Perfect for LLM integration
+- **Rule chaining** - Create workflows by triggering rules
+- **Backward chaining** - Find which rules can achieve goals
+- **Flexible syntax** - Simple strings or nested logical structures
+- **Zero dependencies** - Just PyYAML
 
-## 🎯 **Key Features**
-
-### **Performance & Scalability**
-- ⚡ **Sub-millisecond execution** - Optimized for high-throughput scenarios
-- 🧠 **Intelligent caching** - Content-based caching prevents invalidation bugs
-- 📈 **Multiple execution strategies** - Linear, DAG with parallel processing, and optimized algorithms
-- 🔄 **Batch & async processing** - Process multiple requests efficiently
-- 🎯 **DAG-based parallel execution** - Automatic dependency analysis with conflict resolution
-
-### **Developer Experience**
-- 🎨 **Clean, declarative syntax** - Write rules in YAML or Python
-- 🔧 **Strong typing** - Full type safety with Python type hints
-- 🐛 **Advanced debugging** - Multi-level tracing with performance analysis
-- 📚 **Extensible architecture** - Plugin system for custom functions
-- ✅ **Enhanced validation** - Contextual error messages with fix suggestions
-- 📝 **Rich expression support** - String, structured YAML, and boolean combinators
-
-### **Enterprise Ready**
-- 🏗️ **Rule serialization** - JSON, binary, and compressed formats
-- 🔥 **Hot-reload capabilities** - Dynamic rule loading with file watching
-- 🚨 **Comprehensive error handling** - Graceful degradation and recovery
-- 📊 **Deep monitoring** - Execution metrics, tracing, and performance analysis
-- 🔒 **Secure by design** - Safe expression evaluation with sandboxing
-- 🧵 **Thread-safe operations** - Concurrent execution support
-- 🏭 **Production monitoring** - Rule coverage, bottleneck identification, optimization recommendations
-
-## 🛠️ **Installation**
+## Installation
 
 ```bash
 pip install symbolica
 ```
 
-### **Optional Dependencies**
-```bash
-# For LangChain integration
-pip install symbolica[langchain]
+## Quick Start
 
-# For Semantic Kernel integration  
-pip install symbolica[semantic-kernel]
-
-# Install all optional dependencies
-pip install symbolica[all]
-```
-
-## ⭐ **Advanced Features Highlights**
-
-### **🔥 Hot-Reload & Serialization**
-```python
-from symbolica._internal.serialization import save_rules, load_rules, HotReloadManager
-
-# Save rules in multiple formats
-save_rules(rule_set, "rules.json")           # JSON format
-save_rules(rule_set, "rules.pkl", BINARY)    # Binary format  
-save_rules(rule_set, "rules.gz", COMPRESSED) # Compressed format
-
-# Hot-reload with file watching
-manager = HotReloadManager()
-manager.watch_file("rules.json", callback=on_rules_changed)
-```
-
-### **✅ Enhanced Validation & Error Handling**
-```python
-from symbolica._internal.validation import validate_facts, validate_expression
-
-# Validate with contextual suggestions
-result = validate_expression("customer_type = 'premium'", available_fields)
-if result.errors:
-    for error in result.errors:
-        print(f"ERROR: {error.message}")
-        print(f"SUGGESTION: {error.suggestion}")  # "Use '==' for comparison, not '='"
-```
-
-### **🔍 Deep Tracing & Debugging**
-```python
-from symbolica._internal.tracing import create_tracer, TraceLevel
-
-# Multi-level tracing
-tracer = create_tracer(TraceLevel.DETAILED)
-result = engine.reason(facts, tracer=tracer)
-
-# Get execution analysis
-trace = tracer.get_trace_history()[-1]
-print(f"Why rule fired: {trace.explain_execution('customer_validation')}")
-print(f"Performance: {trace.get_performance_analysis()}")
-```
-
-### **🎯 DAG Execution with Parallel Processing**
-```python
-from symbolica._internal.dag import create_dag_strategy, ConflictResolution
-
-# Advanced execution with conflict resolution
-strategy = create_dag_strategy(
-    max_workers=4,
-    conflict_resolution=ConflictResolution.PRIORITY
-)
-
-# Get execution plan analysis
-dag_info = strategy.get_dag_info(rules, evaluator)
-print(f"Parallel layers: {len(dag_info['execution_plan'])}")
-print(f"Conflicts detected: {len(dag_info['conflicts'])}")
-```
-
-## 🚦 **Quick Start**
-
-### **1. Define Rules in YAML**
+### Define Rules
 
 ```yaml
-# customer_approval.yaml
 rules:
   - id: "vip_customer"
     priority: 100
     condition: "customer_tier == 'vip' and credit_score > 750"
-    then:
+    actions:
       approved: true
       credit_limit: 50000
-      message: "VIP customer approved with high limit"
     tags: ["vip", "approval"]
   
-  - id: "regular_customer"
+  - id: "regular_customer" 
     priority: 50
     condition: "credit_score > 650 and annual_income > 50000"
-    then:
+    actions:
       approved: true
       credit_limit: 25000
-      message: "Regular customer approved"
     tags: ["regular", "approval"]
   
   - id: "high_risk"
     priority: 75
     condition: "previous_defaults > 0 or credit_score < 600"
-    then:
+    actions:
       approved: false
-      message: "Application rejected due to high risk"
     tags: ["risk", "rejection"]
 ```
 
-### **2. Execute Rules**
+### Execute Rules
 
 ```python
-from symbolica import Engine, from_yaml
+from symbolica import Engine, facts
 
-# Load rules from YAML
-engine = from_yaml("customer_approval.yaml")
+# Load rules
+engine = Engine.from_yaml("rules.yaml")
 
-# Define facts
-customer_facts = {
-    "customer_tier": "vip",
-    "credit_score": 800,
-    "annual_income": 120000,
-    "previous_defaults": 0
-}
+# Define customer data
+customer = facts(
+    customer_tier="vip",
+    credit_score=800,
+    annual_income=120000,
+    previous_defaults=0
+)
 
 # Execute rules
-result = engine.reason(customer_facts)
+result = engine.reason(customer)
 
 print(f"Approved: {result.verdict['approved']}")
 print(f"Credit Limit: ${result.verdict['credit_limit']:,}")
-print(f"Message: {result.verdict['message']}")
 print(f"Execution Time: {result.execution_time_ms:.2f}ms")
+print(f"Reasoning: {result.reasoning}")
 ```
 
 **Output:**
 ```
 Approved: True
 Credit Limit: $50,000
-Message: VIP customer approved with high limit
 Execution Time: 0.15ms
+Reasoning: ✓ vip_customer: customer_tier(vip) == 'vip' AND credit_score(800) > 750
 ```
 
-## 📖 **Core Concepts**
-
-### **Rules**
-A rule consists of:
-- **ID**: Unique identifier
-- **Priority**: Execution order (higher numbers first)
-- **Condition**: Boolean expression to evaluate
-- **Actions**: What to do when condition is true
-- **Tags**: Optional metadata for organization
-
-### **Facts**
-Input data that rules evaluate against:
-```python
-facts = {
-    "customer_tier": "vip",
-    "credit_score": 800,
-    "annual_income": 120000
-}
-```
-
-### **Execution Result**
-Contains:
-- **Verdict**: Output data from fired rules
-- **Fired Rules**: List of rules that executed
-- **Execution Time**: Performance metrics
-- **Context**: Debugging information
-
-## 🏗️ **Architecture Overview**
-
-Symbolica uses a **sophisticated layered architecture** with enterprise-grade components:
-
-```
-┌─────────────────────────────────────────┐
-│              Public API                 │
-│  Engine, from_yaml, quick_reason        │
-├─────────────────────────────────────────┤
-│            Compilation System           │
-│  RuleCompiler, Validator, Optimizer     │
-├─────────────────────────────────────────┤
-│               Core Domain               │
-│   Rule, Facts, Priority, Condition     │
-├─────────────────────────────────────────┤
-│              Interfaces                 │
-│  ConditionEvaluator, ActionExecutor     │
-├─────────────────────────────────────────┤
-│          Advanced Engine Systems        │
-│  DAG, Serialization, Tracing, Cache    │
-└─────────────────────────────────────────┘
-```
-
-### **Key Components**
-
-#### **Compilation System**
-- **YAML Parser**: Multi-format YAML rule parsing and validation
-- **Rule Compiler**: Expression optimization and dependency analysis
-- **Validator**: Comprehensive validation with contextual error messages
-- **Optimizer**: Rule optimization and performance tuning
-
-#### **Execution Strategies**
-- **Linear**: Simple priority-based execution (O(n))
-- **DAG**: Parallel dependency-aware execution (O(V+E)) with conflict resolution
-- **Optimized**: Performance-tuned with caching and early termination
-
-#### **Advanced Features**
-- **Serialization**: Multi-format rule persistence (JSON, binary, compressed)
-- **Hot-Reload**: Dynamic rule loading with file system monitoring
-- **Deep Tracing**: Multi-level execution analysis and debugging
-- **Enhanced Validation**: Contextual error messages with fix suggestions
-
-#### **Condition Evaluator**
-- **Comprehensive**: String expressions, structured YAML, boolean combinators
-- **AST-based**: Parses expressions into Abstract Syntax Trees
-- **Safe execution**: Sandboxed expression evaluation
-- **Rich functions**: String, math, logical, and null-check operations
-
-#### **Caching & Performance**
-- **Content-based**: Keys based on content hash, not object identity
-- **Multi-level**: LRU, TTL, and hierarchical caches
-- **Thread-safe**: Concurrent access with proper locking
-- **Performance monitoring**: Execution metrics and bottleneck identification
-
-## 🎨 **Advanced Usage**
-
-### **Dynamic Rule Creation**
+### LLM Integration
 
 ```python
-from symbolica import create_simple_rule, Engine
+# Get clean context for LLM
+llm_context = result.get_llm_context()
 
-# Create rules programmatically
-rules = [
-    create_simple_rule(
-        "temperature_check",
-        "temperature > 30",
-        alert_level="high",
-        action="turn_on_ac"
-    ),
-    create_simple_rule(
-        "humidity_check", 
-        "humidity > 80",
-        alert_level="medium",
-        action="turn_on_dehumidifier"
-    )
-]
+prompt = f"""
+Customer approval decision:
+{llm_context['verdict']}
 
-# Create engine from rules
-engine = Engine.from_rules(rules)
+Reasoning: {llm_context['reasoning']}
+Rules fired: {llm_context['fired_rules']}
+"""
 ```
 
-### **Batch Processing**
+## Advanced Features
 
-```python
-# Process multiple requests
-batch_requests = [
-    {"temperature": 35, "humidity": 45},
-    {"temperature": 28, "humidity": 85},
-    {"temperature": 26, "humidity": 55}
-]
+### Structured Conditions
 
-results = engine.reason_batch(batch_requests)
-for result in results:
-    print(f"Actions: {result.verdict}")
+For complex logic, use nested conditions:
+
+```yaml
+rules:
+  - id: "complex_approval"
+    condition:
+      all:
+        - "age >= 18"
+        - "income > 50000"
+        - any:
+          - "credit_score >= 750"
+          - all:
+            - "credit_score >= 650" 
+            - "employment_years >= 2"
+        - not: "bankruptcy_history == true"
+    actions:
+      approved: true
 ```
 
-### **Async Processing**
+### Rule Chaining
 
-```python
-import asyncio
+Create workflows by triggering other rules automatically:
 
-async def process_customer(customer_data):
-    result = await engine.reason_async(customer_data)
-    return result.verdict
-
-# Process multiple customers concurrently
-customers = [customer1, customer2, customer3]
-results = await asyncio.gather(*[
-    process_customer(customer) for customer in customers
-])
+```yaml
+rules:
+  - id: "vip_customer"
+    priority: 100
+    condition: "customer_tier == 'vip' and credit_score > 750"
+    actions:
+      approved: true
+      credit_limit: 50000
+    triggers: ["send_welcome_package"]
+    
+  - id: "regular_customer"
+    priority: 50
+    condition: "credit_score > 650 and annual_income > 50000"
+    actions:
+      approved: true
+      credit_limit: 25000
+    triggers: ["send_approval_email"]
+    
+  - id: "send_welcome_package"
+    priority: 25
+    condition: "approved == True and customer_tier == 'vip'"
+    actions:
+      welcome_package_sent: true
+      priority_support: true
+    tags: ["notification", "vip"]
+  
+  - id: "send_approval_email"
+    priority: 25
+    condition: "approved == True"
+    actions:
+      email_sent: true
+      onboarding_started: true
+    tags: ["notification", "approval"]
 ```
 
-### **Custom Functions**
+**Output with chaining:**
+```
+Reasoning: ✓ vip_customer: customer_tier(vip) == 'vip' AND credit_score(800) > 750, set approved=True, credit_limit=50000
+✓ send_welcome_package: approved(True) == True and customer_tier(vip) == 'vip', set welcome_package_sent=True, priority_support=True (triggered by vip_customer)
+```
+
+### Backward Chaining
+
+Find which rules can achieve your goals:
 
 ```python
-from symbolica import Engine
+from symbolica import goal
 
-engine = Engine.from_yaml("rules.yaml")
+# What rules can approve a customer?
+approval_goal = goal(approved=True)
+supporting_rules = engine.find_rules_for_goal(approval_goal)
 
-# Register custom function
-engine.register_function("credit_risk_score", lambda score: 
+for rule in supporting_rules:
+    print(f"Rule '{rule.id}': {rule.condition}")
+
+# Can this customer get approved?
+can_approve = engine.can_achieve_goal(approval_goal, customer)
+print(f"Achievable: {can_approve}")
+```
+
+**Output:**
+```
+Rule 'vip_customer': customer_tier == 'vip' and credit_score > 750
+Rule 'regular_customer': credit_score > 650 and annual_income > 50000
+Achievable: True
+```
+
+### Multiple Rule Files
+
+```python
+# Load from directory
+engine = Engine.from_yaml("rules/")
+
+# Load from multiple files
+engine = Engine.from_yaml(["approval.yaml", "pricing.yaml", "notifications.yaml"])
+```
+
+### Custom Functions
+
+```python
+# Register custom functions
+engine.register_function("risk_score", lambda score: 
     "low" if score > 750 else "high" if score < 600 else "medium"
 )
 
 # Use in rules
-rule = """
-condition: "credit_risk_score(credit_score) == 'low'"
-then:
-  approved: true
-"""
+condition: "risk_score(credit_score) == 'low'"
 ```
 
-### **Rule Compilation & Validation**
+### Performance Testing
 
 ```python
-from symbolica.compilation import compile_rules, validate_rules
+import time
 
-# Compile rules from directory
-result = compile_rules("./rules/", strict=True, optimize=True)
-if result.success:
-    print(f"Compiled {result.rule_set.rule_count} rules")
-    print(f"Stats: {result.stats}")
-else:
-    print(f"Errors: {result.errors}")
+# Measure performance
+start = time.perf_counter()
+for _ in range(1000):
+    result = engine.reason(customer)
+elapsed = time.perf_counter() - start
+
+print(f"1000 executions: {elapsed*1000:.2f}ms")
+print(f"Rate: {1000/elapsed:.0f} executions/second")
+```
+
+## Architecture
+
+Symbolica uses a clean, focused architecture:
+
+```
+┌─────────────────────────────────────────┐
+│              Public API                 │
+│     Engine, facts, goal, from_yaml      │
+├─────────────────────────────────────────┤
+│               Core Models               │
+│   Rule, Facts, ExecutionResult, Goal    │
+├─────────────────────────────────────────┤
+│               Evaluation                │
+│    ASTEvaluator, DAGExecutor            │
+├─────────────────────────────────────────┤
+│            Internal Systems             │
+│    YAML Parser, Dependency Analysis     │
+└─────────────────────────────────────────┘
+```
+
+### Key Components
+
+- **Engine** - Main orchestrator for rule execution
+- **ASTEvaluator** - Fast expression evaluation with detailed tracing
+- **DAGExecutor** - Dependency-aware rule execution 
+- **BackwardChainer** - Reverse search for goal achievement
+
+## API Reference
+
+### Core Classes
+
+```python
+from symbolica import Engine, facts, goal
+
+# Create engine
+engine = Engine.from_yaml("rules.yaml")          # From file
+engine = Engine.from_yaml(yaml_string)           # From string
+
+# Create facts
+customer = facts(age=30, income=75000)           # Using helper
+customer = {"age": 30, "income": 75000}          # Or plain dict
+
+# Execute rules
+result = engine.reason(customer)
+
+# Access results
+result.verdict          # Dict of all outputs
+result.fired_rules      # List of rule IDs that fired
+result.reasoning        # Human-readable explanation
+result.execution_time_ms # Performance timing
+
+# Backward chaining
+goal_obj = goal(approved=True)
+rules = engine.find_rules_for_goal(goal_obj)
+achievable = engine.can_achieve_goal(goal_obj, customer)
+```
+
+### Rule Structure
+
+```yaml
+rules:
+  - id: "unique_rule_id"              # Required: unique identifier
+    priority: 100                     # Optional: execution order (higher first)
+    condition: "expression"           # Required: when to fire
+    actions:                          # Required: what to set
+      field: value
+    triggers: ["other_rule_id"]       # Optional: rules to trigger
+    tags: ["category", "type"]        # Optional: metadata
+```
+
+## Testing
+
+```python
+# Test conditions directly
+result = engine.test_condition("credit_score > 650", customer)
+print(f"Condition result: {result}")
 
 # Validate rules before deployment
-validation = validate_rules("./rules/customer_approval.yaml")
-print(f"Valid: {validation['valid']}")
-for warning in validation['warnings']:
-    print(f"WARNING: {warning}")
+try:
+    engine = Engine.from_yaml("rules.yaml")
+    print("Rules are valid")
+except ValidationError as e:
+    print(f"Invalid rules: {e}")
 ```
 
-### **Serialization & Hot-Reload**
+## Configuration
 
 ```python
-from symbolica._internal.serialization import save_rules, HotReloadManager
-from pathlib import Path
+# Basic configuration
+engine = Engine.from_yaml("rules.yaml")
 
-# Save rules in different formats
-save_rules(engine.rule_set, Path("rules.json"))          # Human-readable
-save_rules(engine.rule_set, Path("rules.pkl"), BINARY)   # Fast loading
-save_rules(engine.rule_set, Path("rules.gz"), COMPRESSED) # Space-efficient
+# Load from directory with pattern
+engine = Engine.from_yaml("rules/", pattern="*.yaml")
 
-# Hot-reload setup for development
-def on_rules_changed(path, rule_set, metadata):
-    print(f"Rules updated! {rule_set.rule_count} rules loaded from {path}")
-    engine.update_rules(rule_set)
-
-manager = HotReloadManager()
-manager.watch_file(Path("rules.json"), on_rules_changed)
+# Error handling
+try:
+    result = engine.reason(facts)
+except EvaluationError as e:
+    print(f"Evaluation failed: {e}")
 ```
 
-### **Advanced Tracing & Debugging**
+## Examples
 
-```python
-from symbolica._internal.tracing import create_tracer, TraceLevel, analyze_traces
+Check out the [examples/](examples/) directory:
 
-# Detailed execution tracing
-tracer = create_tracer(TraceLevel.DETAILED)
-results = []
+- **[basic_example.py](examples/basic_example.py)** - Simple customer approval
+- **[enhanced_structured_conditions_example.py](examples/enhanced_structured_conditions_example.py)** - Complex nested logic
+- **[simple_backward_search_example.py](examples/simple_backward_search_example.py)** - Goal-directed reasoning
 
-for facts in test_cases:
-    result = engine.reason(facts, tracer=tracer)
-    results.append(result)
+## Performance
 
-# Analyze execution patterns
-traces = tracer.get_trace_history()
-analysis = analyze_traces(traces)
+- **Sub-millisecond execution** for typical rule sets
+- **6,000+ executions per second** on standard hardware  
+- **Linear scaling** up to 1000+ rules
+- **Minimal memory footprint**
 
-print(f"Rule performance analysis:")
-for rule_id, perf in analysis['rule_performance'].items():
-    print(f"  {rule_id}: {perf['avg_execution_time_ms']:.2f}ms avg")
+## Contributing
 
-print(f"Bottlenecks: {analysis['bottlenecks']}")
-print(f"Optimization suggestions: {analysis['optimizations']}")
-```
+1. Fork the repository
+2. Create a feature branch  
+3. Add tests for new functionality
+4. Run tests: `pytest`
+5. Submit a pull request
 
-### **DAG Execution Analysis**
+## License
 
-```python
-from symbolica._internal.dag import create_dag_strategy
+MIT License - see [LICENSE](LICENSE) file for details.
 
-# Create DAG strategy with conflict resolution
-dag_strategy = create_dag_strategy(
-    max_workers=4,
-    conflict_resolution=ConflictResolution.PRIORITY
-)
+## Support
 
-# Analyze execution plan before running
-dag_info = dag_strategy.get_dag_info(rules, evaluator)
-print("Execution Plan:")
-for layer in dag_info['execution_plan']:
-    print(f"  Layer {layer['layer']}: {layer['parallel_count']} rules in parallel")
-    print(f"    Rules: {layer['rules']}")
-
-if dag_info['conflicts']:
-    print(f"Conflicts detected: {len(dag_info['conflicts'])}")
-    for conflict in dag_info['conflicts']:
-        print(f"  Field '{conflict['field']}': {conflict['writers']}")
-```
-
-## 🔧 **Configuration**
-
-### **Engine Configuration**
-
-```python
-from symbolica import Engine, Config
-
-config = Config(
-    execution_strategy="dag",  # linear, dag, optimized
-    cache_type="lru",          # lru, ttl, multilevel
-    cache_size=1000,
-    enable_tracing=True,
-    max_execution_time_ms=100
-)
-
-engine = Engine.from_config(config)
-```
-
-### **Performance Tuning**
-
-```python
-# For high-throughput scenarios
-engine = Engine.from_yaml("rules.yaml", 
-    execution_strategy="optimized",
-    cache_type="multilevel",
-    cache_size=10000
-)
-
-# For development/debugging
-engine = Engine.from_yaml("rules.yaml",
-    enable_tracing=True,
-    trace_level="detailed"
-)
-```
-
-## 🧪 **Testing & Debugging**
-
-### **Enhanced Validation**
-
-```python
-from symbolica._internal.validation import validate_facts, validate_expression, validate_rule_dict
-
-# Validate facts with detailed feedback
-facts = {"customer_type": "premium", "credit_score": "high"}  # Wrong type
-result = validate_facts(facts, expected_types={"credit_score": int})
-
-for error in result.errors:
-    print(f"ERROR: {error.message}")
-    print(f"FIELD: {error.field}")
-    print(f"SUGGESTION: {error.suggestion}")
-
-# Validate expressions with context
-expr_result = validate_expression("customer_tier = 'vip'", available_fields=["customer_tier"])
-if expr_result.errors:
-    print("Expression error detected:")
-    print(f"  Issue: {expr_result.errors[0].message}")
-    print(f"  Fix: {expr_result.errors[0].suggestion}")  # "Use '==' for comparison"
-```
-
-### **Multi-Level Tracing**
-
-```python
-from symbolica._internal.tracing import create_tracer, TraceLevel
-
-# Create tracer with different levels
-tracer = create_tracer(TraceLevel.DEBUG)  # NONE, BASIC, DETAILED, DEBUG
-
-# Execute with detailed tracing
-result = engine.reason(facts, tracer=tracer)
-
-# Get comprehensive execution analysis
-traces = tracer.get_trace_history()
-latest_trace = traces[-1]
-
-# Detailed rule analysis
-print("Execution Summary:")
-print(f"  Total rules evaluated: {latest_trace.total_rules_evaluated}")
-print(f"  Rules fired: {latest_trace.total_rules_fired}")
-print(f"  Execution time: {latest_trace.execution_time_ms:.2f}ms")
-
-# Rule-specific analysis
-for rule_trace in latest_trace.rule_traces:
-    print(f"Rule {rule_trace.rule_id}:")
-    print(f"  Fired: {rule_trace.fired}")
-    print(f"  Time: {rule_trace.execution_time_ms:.2f}ms")
-    if rule_trace.error:
-        print(f"  Error: {rule_trace.error}")
-
-# Get explanations
-explanation = latest_trace.explain_execution("customer_validation")
-print(f"Why rule fired: {explanation}")
-```
-
-### **Performance Analysis & Optimization**
-
-```python
-from symbolica._internal.tracing import TraceAnalyzer
-
-# Analyze multiple execution traces
-analyzer = TraceAnalyzer(tracer.get_trace_history())
-
-# Rule performance analysis
-perf_analysis = analyzer.analyze_rule_performance("high_value_customer")
-print(f"Rule Performance:")
-print(f"  Executions: {perf_analysis['total_executions']}")
-print(f"  Fire rate: {perf_analysis['fire_rate']:.2%}")
-print(f"  Avg time: {perf_analysis['avg_execution_time_ms']:.2f}ms")
-print(f"  Classification: {perf_analysis['performance_classification']}")
-
-# Field usage analysis
-field_analysis = analyzer.analyze_field_usage()
-print(f"Field Usage:")
-for field, stats in field_analysis.items():
-    print(f"  {field}: {stats['read_count']} reads, {stats['write_count']} writes")
-
-# Bottleneck identification
-bottlenecks = analyzer.identify_bottlenecks()
-print(f"Performance Bottlenecks:")
-for bottleneck in bottlenecks:
-    print(f"  {bottleneck['type']}: {bottleneck['description']}")
-    print(f"    Recommendation: {bottleneck['recommendation']}")
-```
-
-### **Rule Coverage Analysis**
-
-```python
-# Analyze rule coverage across multiple executions
-coverage = analyzer.analyze_rule_coverage()
-print(f"Rule Coverage Report:")
-print(f"  Total rules: {coverage['total_rules']}")
-print(f"  Rules that fired: {coverage['rules_fired']}")
-print(f"  Coverage rate: {coverage['coverage_rate']:.2%}")
-
-# Identify unused rules
-unused_rules = coverage['unused_rules']
-if unused_rules:
-    print(f"Unused rules (consider review):")
-    for rule_id in unused_rules:
-        print(f"  - {rule_id}")
-
-# Export trace data for external analysis
-trace_data = latest_trace.to_dict()
-with open("trace_analysis.json", "w") as f:
-    json.dump(trace_data, f, indent=2)
-```
-
-## 🤝 **Integration Examples**
-
-### **LangChain Integration**
-
-```python
-from symbolica.integrations.langchain import SymbolicaTool
-
-# Create LangChain tool
-symbolica_tool = SymbolicaTool(rules_file="customer_rules.yaml")
-
-# Use in agent
-from langchain.agents import initialize_agent
-agent = initialize_agent([symbolica_tool], llm)
-```
-
-### **FastAPI Integration**
-
-```python
-from fastapi import FastAPI
-from symbolica import Engine
-
-app = FastAPI()
-engine = Engine.from_yaml("business_rules.yaml")
-
-@app.post("/evaluate")
-async def evaluate_rules(facts: dict):
-    result = await engine.reason_async(facts)
-    return {
-        "verdict": result.verdict,
-        "execution_time_ms": result.execution_time_ms
-    }
-```
-
-## 📊 **Performance Benchmarks**
-
-### **Rule Execution Performance**
-| Rule Count | Linear Strategy | DAG Strategy | Memory Usage | Cache Hit Rate |
-|-----------|----------------|-------------|--------------|----------------|
-| 10 rules   | 0.1ms         | 0.15ms      | 2MB          | 95%           |
-| 100 rules  | 0.3ms         | 0.25ms      | 8MB          | 92%           |
-| 1000 rules | 1.2ms         | 0.8ms       | 25MB         | 88%           |
-| 10000 rules| 8.5ms         | 3.2ms       | 120MB        | 85%           |
-
-### **Advanced Features Performance**
-| Feature | Performance Impact | Notes |
-|---------|-------------------|-------|
-| **Serialization** | | |
-| JSON | 1-5ms typical | Human-readable, debugging-friendly |
-| Binary | 0.5-2ms typical | Faster loading, more compact |
-| Compressed | 2-3x slower, 30-70% smaller | Space-efficient for storage |
-| **Hot-Reload** | <1ms detection | File change monitoring overhead |
-| **Validation** | | |
-| Facts validation | 0.1-1ms | Depends on complexity |
-| Expression validation | 0.5-2ms | Includes syntax parsing |
-| Rule validation | 1-5ms | Cross-rule analysis |
-| **Tracing Overhead** | | |
-| NONE | 0% overhead | No performance impact |
-| BASIC | <5% overhead | Essential execution info |
-| DETAILED | 10-20% overhead | Comprehensive analysis |
-| DEBUG | 20-50% overhead | Full step-by-step tracing |
-
-### **DAG Execution Benefits**
-| Scenario | Linear Time | DAG Time | Improvement |
-|----------|------------|----------|-------------|
-| Independent rules | 5.2ms | 2.1ms | **2.5x faster** |
-| Complex dependencies | 12.8ms | 4.3ms | **3x faster** |
-| Parallel-friendly workload | 8.9ms | 2.8ms | **3.2x faster** |
-
-*Benchmarks run on MacBook Pro M2, 16GB RAM*
-
-## 🛡️ **Security**
-
-Symbolica is designed with security in mind:
-- **Sandboxed execution**: Expressions run in controlled environment
-- **No arbitrary code execution**: Only safe operations allowed
-- **Input validation**: All inputs validated before processing
-- **Memory bounds**: Configurable limits prevent resource exhaustion
-
-## 🔄 **Migration Guide**
-
-### **From Other Rule Engines**
-
-```python
-# Drools-style (Java)
-# rule "High Value Customer"
-# when
-#     Customer(type == "VIP", creditScore > 750)
-# then
-#     approval.setApproved(true);
-# end
-
-# Symbolica equivalent
-rule = {
-    "id": "high_value_customer",
-    "condition": "customer_type == 'VIP' and credit_score > 750",
-    "then": {"approved": True}
-}
-```
-
-## 🏭 **Enterprise Features**
-
-### **Production Deployment**
-```python
-from symbolica import Engine
-from symbolica._internal.serialization import save_rules, load_rules
-from symbolica._internal.tracing import create_tracer, TraceLevel
-
-# Production-optimized engine setup
-engine = Engine.from_compiled_rules(
-    "production_rules.pkl",  # Pre-compiled binary rules
-    execution_strategy="dag",  # Parallel execution
-    cache_size=10000,         # Large cache for high throughput
-    enable_monitoring=True    # Performance monitoring
-)
-
-# Enable production monitoring
-tracer = create_tracer(TraceLevel.BASIC)  # Minimal overhead
-engine.set_tracer(tracer)
-
-# Set up alerting for performance issues
-def performance_alert(trace):
-    if trace.execution_time_ms > 100:  # Alert on slow executions
-        log.warning(f"Slow execution: {trace.execution_time_ms}ms")
-
-tracer.add_callback(performance_alert)
-```
-
-### **Development Workflow**
-```bash
-# 1. Develop rules with hot-reload
-python -c "
-from symbolica._internal.serialization import HotReloadManager
-manager = HotReloadManager()
-manager.watch_file('rules.yaml', callback=reload_and_test)
-"
-
-# 2. Validate before deployment
-python -c "
-from symbolica.compilation import validate_rules
-result = validate_rules('./rules/')
-print('Validation:', 'PASSED' if result['valid'] else 'FAILED')
-"
-
-# 3. Compile for production
-python -c "
-from symbolica.compilation import compile_rules
-from symbolica._internal.serialization import save_rules
-result = compile_rules('./rules/', optimize=True)
-save_rules(result.rule_set, 'production_rules.pkl', BINARY)
-"
-```
-
-### **Advanced Example**
-Run the comprehensive advanced features example:
-```bash
-cd symbolica-new
-python examples/advanced_features_example.py
-```
-
-This demonstrates:
-- **Rule serialization** in multiple formats with performance comparison
-- **Enhanced validation** with contextual error messages and suggestions
-- **Deep tracing** with multi-level analysis and debugging recommendations
-- **Hot-reload capabilities** with file system monitoring
-- **DAG execution** with parallel processing and conflict resolution
-- **Performance analysis** and optimization recommendations
-
-## 🤝 **Contributing**
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### **Development Setup**
-
-```bash
-# Clone repository
-git clone https://github.com/symbolica/symbolica.git
-cd symbolica
-
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run linting
-black .
-isort .
-ruff check .
-mypy .
-```
-
-## 📄 **License**
-
-MIT License. See [LICENSE](LICENSE) for details.
-
-## 🆘 **Support**
-
-- **Documentation**: [https://symbolica.readthedocs.io](https://symbolica.readthedocs.io)
-- **Issues**: [GitHub Issues](https://github.com/symbolica/symbolica/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/symbolica/symbolica/discussions)
-- **Email**: team@symbolica.ai
-
-## 🙏 **Acknowledgments**
-
-Built with ❤️ by the Symbolica team. Special thanks to our contributors and the Python community.
+- **Issues**: [GitHub Issues](https://github.com/anibjoshi/symbolica/issues)
+- **Repository**: [GitHub](https://github.com/anibjoshi/symbolica)
 
 ---
 
-*"Enterprise-grade rule engine that makes complex decisions simple and scalable"* ⚡ 
+**Symbolica**: Reliable reasoning for AI agents. Because deterministic beats probabilistic for critical decisions.
