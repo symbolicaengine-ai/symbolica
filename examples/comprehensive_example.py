@@ -21,7 +21,7 @@ rules:
       customer_type: new
       welcome_discount: 0.1
     tags: [classification, new_customer]
-  
+    
   - id: classify_regular_customer
     priority: 20
     condition: order_count >= 1 and order_count < 10
@@ -29,7 +29,7 @@ rules:
       customer_type: regular
       loyalty_points: 100
     tags: [classification, regular_customer]
-  
+    
   - id: classify_vip_customer
     priority: 30
     condition: order_count >= 10 or total_spent > 1000
@@ -47,7 +47,7 @@ rules:
       bulk_discount: 0.15
       discount_reason: "Bulk purchase discount"
     tags: [pricing, bulk]
-  
+    
   - id: vip_pricing
     priority: 50
     condition: customer_type == 'vip'
@@ -55,7 +55,7 @@ rules:
       vip_discount: 0.2
       priority_support: true
     tags: [pricing, vip]
-  
+
   # Inventory and shipping rules
   - id: expedited_shipping
     priority: 60
@@ -73,7 +73,7 @@ rules:
       shipping_reason: "Free shipping on orders over $75"
     tags: [shipping, free]
 """
-
+    
 
 def demonstrate_simple_explanations():
     """Show simple, clear explanations for LLM integration."""
