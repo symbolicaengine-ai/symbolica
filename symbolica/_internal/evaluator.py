@@ -7,7 +7,7 @@ Simple AST-based expression evaluation with built-in tracing for AI agents.
 
 import ast
 import re
-from typing import Dict, Any, Set, TYPE_CHECKING
+from typing import Dict, Any, Set, Tuple, TYPE_CHECKING
 from functools import lru_cache
 from dataclasses import dataclass
 
@@ -68,7 +68,7 @@ class ASTEvaluator(ConditionEvaluator):
         except Exception as e:
             raise EvaluationError(f"Evaluation error: {e}")
     
-    def _eval_node(self, node, context: 'ExecutionContext') -> tuple[Any, Dict[str, Any]]:
+    def _eval_node(self, node, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
         """Evaluate AST node and collect field values."""
         field_values = {}
         

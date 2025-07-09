@@ -121,7 +121,7 @@ rules:
     priority: 100
     if: "amount > 10000"
     then:
-      tier: vip
+        tier: vip
 """
         engine = Engine.from_yaml(yaml_rules)
         
@@ -176,7 +176,7 @@ rules:
   - id: broken_rule
     if: "amount >"  # Invalid expression syntax
     then:
-      tier: premium
+        tier: premium
 """
         
         # Should raise ValidationError during engine creation
@@ -192,7 +192,7 @@ rules:
     priority: 100
     if: "amount / divisor > 100"
     then:
-      result: calculated
+        result: calculated
 """
         
         engine = Engine.from_yaml(yaml_rules)
@@ -217,7 +217,7 @@ rules:
     priority: 100
     if: "nonexistent_field > 100"
     then:
-      status: processed
+        status: processed
 """
         
         engine = Engine.from_yaml(yaml_rules)
@@ -340,8 +340,8 @@ class TestPerformance:
     priority: {100 - i}
     if: "amount > {i * 100} and field_{i % 5} == 'value_{i % 3}'"
     then:
-      result_{i}: true
-      priority_{i}: {100 - i}
+        result_{i}: true
+        priority_{i}: {100 - i}
 """)
         
         large_yaml = '\n'.join(rules)

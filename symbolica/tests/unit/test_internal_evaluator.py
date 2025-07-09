@@ -174,7 +174,7 @@ class TestASTEvaluator:
         mixed_expr = "len(tags) >= 2 and 'vip' in tags and amount > sum([100, 200, 300])"
         assert evaluator.evaluate(mixed_expr, context) is True
     
-    @pytest.mark.unit 
+    @pytest.mark.unit
     def test_field_extraction(self, evaluator):
         """Test field extraction from expressions."""
         # Simple field extraction

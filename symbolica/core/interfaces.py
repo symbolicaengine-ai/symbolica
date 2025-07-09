@@ -57,4 +57,4 @@ class ExecutionStrategy(ABC):
         Returns:
             Rules in execution order
         """
-        pass 
+        pass

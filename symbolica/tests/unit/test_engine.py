@@ -413,7 +413,7 @@ rules:
       result: true
 """
         
-        with pytest.raises(ValidationError, match="'all' must contain a list"):
+        with pytest.raises(ValidationError, match="'all' must contain a non-empty list of conditions"):
             Engine.from_yaml(invalid_all_yaml)
         
         # Invalid: unknown structured condition key
@@ -427,7 +427,7 @@ rules:
       result: true
 """
         
-        with pytest.raises(ValidationError, match="Structured condition must contain"):
+        with pytest.raises(ValidationError, match="Unknown structured condition key"):
             Engine.from_yaml(invalid_key_yaml)
 
 

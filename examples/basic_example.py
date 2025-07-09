@@ -16,26 +16,26 @@ rules:
     priority: 100
     condition: "customer_tier == 'vip' and credit_score > 750"
     actions:
-      approved: true
-      credit_limit: 50000
-      message: "VIP customer approved with high limit"
+        approved: true
+        credit_limit: 50000
+        message: "VIP customer approved with high limit"
     tags: ["vip", "approval"]
   
   - id: "regular_customer"
     priority: 50
     condition: "credit_score > 650 and annual_income > 50000"
     actions:
-      approved: true
-      credit_limit: 25000
-      message: "Regular customer approved"
+        approved: true
+        credit_limit: 25000
+        message: "Regular customer approved"
     tags: ["regular", "approval"]
   
   - id: "high_risk"
     priority: 75
     condition: "previous_defaults > 0 or credit_score < 600"
     actions:
-      approved: false
-      message: "Application rejected due to high risk"
+        approved: false
+        message: "Application rejected due to high risk"
     tags: ["risk", "rejection"]
 """
 

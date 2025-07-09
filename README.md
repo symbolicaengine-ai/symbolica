@@ -4,7 +4,8 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-sub--millisecond-brightgreen.svg)](https://github.com/anibjoshi/symbolica)
 
-**Symbolica** is a focused rule engine designed for AI agents that need deterministic, explainable reasoning. It replaces unreliable LLM reasoning with fast, consistent rule evaluation.
+
+**Symbolica** is a rule engine for AI agents that need deterministic, explainable reasoning. Replace unreliable LLM reasoning with fast, consistent rule evaluation.
 
 ## Why Symbolica?
 
@@ -12,18 +13,18 @@ AI agents need **deterministic logic** for critical decisions. Instead of hoping
 
 **Perfect for:**
 - **AI Agent Decision Making** - Replace LLM reasoning with reliable rules
-- **Business Rules** - Customer approval, pricing, risk assessment  
-- **Workflow Logic** - Conditional processing and routing
+- **Business Logic** - Customer approval, pricing, risk assessment  
+- **Workflow Automation** - Multi-step processes with rule chaining
 - **Compliance** - Policy enforcement with audit trails
 
 ## Key Features
 
 - **Sub-millisecond execution** - 6,000+ executions per second
 - **Clean explanations** - Perfect for LLM integration
-- **Scales to 1000+ rules** - DAG-based dependency resolution
+- **Rule chaining** - Create workflows by triggering rules
 - **Backward chaining** - Find which rules can achieve goals
-- **Simple YAML syntax** - Easy to read and maintain
-- **Zero overengineering** - Just what you need, nothing more
+- **Flexible syntax** - Simple strings or nested logical structures
+- **Zero dependencies** - Just PyYAML
 
 ## Installation
 
@@ -33,10 +34,8 @@ pip install symbolica
 
 ## Quick Start
 
-### 1. Define Rules in YAML
-
+### Define Rules
 ```yaml
-# customer_approval.yaml
 rules:
   - id: "vip_customer"
     priority: 100
@@ -44,7 +43,6 @@ rules:
     actions:
       approved: true
       credit_limit: 50000
-      message: "VIP customer approved"
     tags: ["vip", "approval"]
   
   - id: "regular_customer" 
@@ -53,7 +51,6 @@ rules:
     actions:
       approved: true
       credit_limit: 25000
-      message: "Regular customer approved"
     tags: ["regular", "approval"]
   
   - id: "high_risk"
@@ -61,17 +58,16 @@ rules:
     condition: "previous_defaults > 0 or credit_score < 600"
     actions:
       approved: false
-      message: "Application rejected due to high risk"
     tags: ["risk", "rejection"]
 ```
 
-### 2. Execute Rules
 
+### Execute Rules
 ```python
 from symbolica import Engine, facts
 
-# Load rules from YAML
-engine = Engine.from_yaml("customer_approval.yaml")
+# Load rules
+engine = Engine.from_yaml("rules.yaml")
 
 # Define customer data
 customer = facts(
@@ -88,7 +84,6 @@ print(f"Approved: {result.verdict['approved']}")
 print(f"Credit Limit: ${result.verdict['credit_limit']:,}")
 print(f"Execution Time: {result.execution_time_ms:.2f}ms")
 
-# Get clean reasoning for LLM
 print(f"Reasoning: {result.reasoning}")
 ```
 
@@ -97,26 +92,94 @@ print(f"Reasoning: {result.reasoning}")
 Approved: True
 Credit Limit: $50,000
 Execution Time: 0.15ms
-Reasoning: Rule 'vip_customer' fired because: customer_tier(vip) == 'vip' AND credit_score(800) > 750
+Reasoning: ✓ vip_customer: customer_tier(vip) == 'vip' AND credit_score(800) > 750
 ```
 
-### 3. LLM Integration
+### LLM Integration
 
 ```python
-# Get LLM-friendly context
+# Get clean context for LLM
 llm_context = result.get_llm_context()
 
-# Send to your LLM
 prompt = f"""
 Customer approval decision:
 {llm_context['verdict']}
+
 
 Reasoning: {llm_context['reasoning']}
 Rules fired: {llm_context['fired_rules']}
 """
 ```
 
-## Backward Chaining
+## Advanced Features
+
+### Structured Conditions
+
+For complex logic, use nested conditions:
+
+```yaml
+rules:
+  - id: "complex_approval"
+    condition:
+      all:
+        - "age >= 18"
+        - "income > 50000"
+        - any:
+          - "credit_score >= 750"
+          - all:
+            - "credit_score >= 650" 
+            - "employment_years >= 2"
+        - not: "bankruptcy_history == true"
+    actions:
+      approved: true
+```
+
+### Rule Chaining
+
+Create workflows by triggering other rules automatically:
+
+```yaml
+rules:
+  - id: "vip_customer"
+    priority: 100
+    condition: "customer_tier == 'vip' and credit_score > 750"
+    actions:
+      approved: true
+      credit_limit: 50000
+    triggers: ["send_welcome_package"]
+    
+  - id: "regular_customer"
+    priority: 50
+    condition: "credit_score > 650 and annual_income > 50000"
+    actions:
+      approved: true
+      credit_limit: 25000
+    triggers: ["send_approval_email"]
+    
+  - id: "send_welcome_package"
+    priority: 25
+    condition: "approved == True and customer_tier == 'vip'"
+    actions:
+      welcome_package_sent: true
+      priority_support: true
+    tags: ["notification", "vip"]
+  
+  - id: "send_approval_email"
+    priority: 25
+    condition: "approved == True"
+    actions:
+      email_sent: true
+      onboarding_started: true
+    tags: ["notification", "approval"]
+```
+
+**Output with chaining:**
+```
+Reasoning: ✓ vip_customer: customer_tier(vip) == 'vip' AND credit_score(800) > 750, set approved=True, credit_limit=50000
+✓ send_welcome_package: approved(True) == True and customer_tier(vip) == 'vip', set welcome_package_sent=True, priority_support=True (triggered by vip_customer)
+```
+
+### Backward Chaining
 
 Find which rules can achieve your goals:
 
@@ -128,54 +191,19 @@ approval_goal = goal(approved=True)
 supporting_rules = engine.find_rules_for_goal(approval_goal)
 
 for rule in supporting_rules:
-    print(f"Rule '{rule.id}' can approve: {rule.condition}")
+    print(f"Rule '{rule.id}': {rule.condition}")
 
 # Can this customer get approved?
 can_approve = engine.can_achieve_goal(approval_goal, customer)
-print(f"Customer can be approved: {can_approve}")
+print(f"Achievable: {can_approve}")
 ```
 
 **Output:**
 ```
-Rule 'vip_customer' can approve: customer_tier == 'vip' and credit_score > 750
-Rule 'regular_customer' can approve: credit_score > 650 and annual_income > 50000
-Customer can be approved: True
+Rule 'vip_customer': customer_tier == 'vip' and credit_score > 750
+Rule 'regular_customer': credit_score > 650 and annual_income > 50000
+Achievable: True
 ```
-
-## Core Concepts
-
-### Rules
-Each rule has:
-- **ID** - Unique identifier
-- **Priority** - Higher numbers execute first
-- **Condition** - Boolean expression to evaluate
-- **Actions** - What happens when condition is true
-- **Tags** - Optional metadata
-
-### Facts
-Input data for rules:
-```python
-customer = facts(
-    credit_score=750,
-    annual_income=80000,
-    customer_tier="regular"
-)
-
-# Or use dictionaries
-result = engine.reason({
-    "credit_score": 750,
-    "annual_income": 80000
-})
-```
-
-### Execution Result
-Contains:
-- **Verdict** - Combined output from all fired rules
-- **Fired Rules** - List of rules that executed
-- **Reasoning** - Human-readable explanation
-- **Execution Time** - Performance metrics
-
-## Advanced Usage
 
 ### Multiple Rule Files
 
@@ -184,23 +212,7 @@ Contains:
 engine = Engine.from_yaml("rules/")
 
 # Load from multiple files
-engine = Engine.from_yaml(["approval.yaml", "pricing.yaml"])
-```
-
-### Structured Conditions
-
-```yaml
-rules:
-  - id: "complex_approval"
-    condition:
-      all:
-        - "credit_score > 650"
-        - any:
-          - "customer_tier == 'vip'"
-          - "annual_income > 100000"
-        - not: "previous_defaults > 2"
-    actions:
-      approved: true
+engine = Engine.from_yaml(["approval.yaml", "pricing.yaml", "notifications.yaml"])
 ```
 
 ### Custom Functions
@@ -231,7 +243,6 @@ print(f"Rate: {1000/elapsed:.0f} executions/second")
 ```
 
 ## Architecture
-
 Symbolica uses a clean, focused architecture:
 
 ```
@@ -240,13 +251,13 @@ Symbolica uses a clean, focused architecture:
 │     Engine, facts, goal, from_yaml      │
 ├─────────────────────────────────────────┤
 │               Core Models               │
-│   Rule, Facts, ExecutionResult, Goal   │
+│   Rule, Facts, ExecutionResult, Goal    │
 ├─────────────────────────────────────────┤
 │               Evaluation                │
-│    ASTEvaluator, DAGExecutor           │
+│    ASTEvaluator, DAGExecutor            │
 ├─────────────────────────────────────────┤
 │            Internal Systems             │
-│    YAML Parser, Dependency Analysis    │
+│    YAML Parser, Dependency Analysis     │
 └─────────────────────────────────────────┘
 ```
 
@@ -256,6 +267,49 @@ Symbolica uses a clean, focused architecture:
 - **ASTEvaluator** - Fast expression evaluation with detailed tracing
 - **DAGExecutor** - Dependency-aware rule execution 
 - **BackwardChainer** - Reverse search for goal achievement
+
+## API Reference
+
+### Core Classes
+
+```python
+from symbolica import Engine, facts, goal
+
+# Create engine
+engine = Engine.from_yaml("rules.yaml")          # From file
+engine = Engine.from_yaml(yaml_string)           # From string
+
+# Create facts
+customer = facts(age=30, income=75000)           # Using helper
+customer = {"age": 30, "income": 75000}          # Or plain dict
+
+# Execute rules
+result = engine.reason(customer)
+
+# Access results
+result.verdict          # Dict of all outputs
+result.fired_rules      # List of rule IDs that fired
+result.reasoning        # Human-readable explanation
+result.execution_time_ms # Performance timing
+
+# Backward chaining
+goal_obj = goal(approved=True)
+rules = engine.find_rules_for_goal(goal_obj)
+achievable = engine.can_achieve_goal(goal_obj, customer)
+```
+
+### Rule Structure
+
+```yaml
+rules:
+  - id: "unique_rule_id"              # Required: unique identifier
+    priority: 100                     # Optional: execution order (higher first)
+    condition: "expression"           # Required: when to fire
+    actions:                          # Required: what to set
+      field: value
+    triggers: ["other_rule_id"]       # Optional: rules to trigger
+    tags: ["category", "type"]        # Optional: metadata
+```
 
 ## Testing
 
@@ -272,14 +326,6 @@ except ValidationError as e:
     print(f"Invalid rules: {e}")
 ```
 
-## Examples
-
-Check out the [examples/](examples/) directory:
-
-- **[basic_example.py](examples/basic_example.py)** - Customer approval workflow
-- **[simple_backward_search_example.py](examples/simple_backward_search_example.py)** - Goal-directed reasoning
-- **[comprehensive_example.py](examples/comprehensive_example.py)** - Complex business rules
-
 ## Configuration
 
 ```python
@@ -295,23 +341,27 @@ try:
 except EvaluationError as e:
     print(f"Evaluation failed: {e}")
 ```
+## Examples
+
+Check out the [examples/](examples/) directory:
+
+- **[basic_example.py](examples/basic_example.py)** - Simple customer approval
+- **[enhanced_structured_conditions_example.py](examples/enhanced_structured_conditions_example.py)** - Complex nested logic
+- **[simple_backward_search_example.py](examples/simple_backward_search_example.py)** - Goal-directed reasoning
 
 ## Performance
 
-Symbolica is optimized for AI agent workflows:
-
 - **Sub-millisecond execution** for typical rule sets
-- **6,000+ executions per second** on standard hardware
+- **6,000+ executions per second** on standard hardware  
 - **Linear scaling** up to 1000+ rules
-- **Minimal memory footprint** with efficient AST evaluation
-- **No external dependencies** except PyYAML
+- **Minimal memory footprint**
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch  
 3. Add tests for new functionality
-4. Ensure all tests pass: `pytest`
+4. Run tests: `pytest`
 5. Submit a pull request
 
 ## License
@@ -326,4 +376,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Symbolica**: Reliable reasoning for AI agents. Because deterministic beats probabilistic for critical decisions. 
+**Symbolica**: Reliable reasoning for AI agents. Because deterministic beats probabilistic for critical decisions.
