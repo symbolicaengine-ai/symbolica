@@ -7,7 +7,7 @@ Simple AST-based expression evaluation with built-in tracing for AI agents.
 
 import ast
 import re
-from typing import Dict, Any, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Set, Tuple, TYPE_CHECKING, Callable
 from functools import lru_cache
 from dataclasses import dataclass
 
@@ -54,6 +54,36 @@ class ASTEvaluator(ConditionEvaluator):
     
     def __init__(self):
         self._cache: Dict[str, Any] = {}
+        self._custom_functions: Dict[str, Callable] = {}
+    
+    def register_function(self, name: str, func: Callable) -> None:
+        """Register a custom function."""
+        if not callable(func):
+            raise ValueError(f"Function {name} must be callable")
+        if not name.isidentifier():
+            raise ValueError(f"Function name {name} must be a valid identifier")
+        if name in RESERVED_WORDS:
+            raise ValueError(f"Function name {name} is reserved")
+        
+        self._custom_functions[name] = func
+    
+    def unregister_function(self, name: str) -> None:
+        """Remove a registered custom function."""
+        self._custom_functions.pop(name, None)
+    
+    def list_functions(self) -> Dict[str, str]:
+        """List all available functions."""
+        built_in = {
+            'len': 'Get length of sequence',
+            'sum': 'Sum elements of sequence', 
+            'abs': 'Absolute value',
+            'startswith': 'Check if string starts with substring',
+            'endswith': 'Check if string ends with substring',
+            'contains': 'Check if sequence contains element'
+        }
+        custom = {name: f'Custom function: {func.__name__ if hasattr(func, "__name__") else "lambda"}' 
+                 for name, func in self._custom_functions.items()}
+        return {**built_in, **custom}
     
     def evaluate(self, condition_expr: str, context: 'ExecutionContext') -> bool:
         """Evaluate condition expression."""
@@ -150,6 +180,7 @@ class ASTEvaluator(ConditionEvaluator):
                     field_values.update(fields)
                     args.append(val)
                 
+                # Check built-in functions first
                 if func_name == 'len':
                     return len(args[0]) if args else 0, field_values
                 elif func_name == 'sum':
@@ -162,6 +193,15 @@ class ASTEvaluator(ConditionEvaluator):
                     return args[0].endswith(args[1]) if len(args) >= 2 else False, field_values
                 elif func_name == 'contains':
                     return args[1] in args[0] if len(args) >= 2 else False, field_values
+                
+                # Check custom functions
+                elif func_name in self._custom_functions:
+                    try:
+                        result = self._custom_functions[func_name](*args)
+                        return result, field_values
+                    except Exception as e:
+                        raise EvaluationError(f"Error in custom function {func_name}: {e}")
+                
                 else:
                     raise EvaluationError(f"Unknown function: {func_name}")
                     
@@ -221,23 +261,35 @@ class ASTEvaluator(ConditionEvaluator):
             return left is not right
         return False
     
-    @lru_cache(maxsize=128)
     def extract_fields(self, condition_expr: str) -> Set[str]:
         """Extract field names from condition expression."""
         try:
             tree = ast.parse(condition_expr.strip(), mode='eval')
             fields = set()
             
+            # Create dynamic reserved words including custom functions
+            all_reserved = RESERVED_WORDS | set(self._custom_functions.keys())
+            
             class FieldCollector(ast.NodeVisitor):
                 def visit_Name(self, node):
-                    if isinstance(node.ctx, ast.Load) and node.id not in RESERVED_WORDS:
+                    if isinstance(node.ctx, ast.Load) and node.id not in all_reserved:
                         fields.add(node.id)
+                        
+                def visit_Call(self, node):
+                    # Don't treat function names as fields
+                    if isinstance(node.func, ast.Name):
+                        # Visit arguments but not the function name
+                        for arg in node.args:
+                            self.visit(arg)
+                    else:
+                        self.generic_visit(node)
             
             FieldCollector().visit(tree)
             return fields
         except:
             matches = FIELD_PATTERN.findall(condition_expr)
-            return {match for match in matches if match not in RESERVED_WORDS}
+            all_reserved = RESERVED_WORDS | set(self._custom_functions.keys())
+            return {match for match in matches if match not in all_reserved}
 
 
  

@@ -19,7 +19,7 @@ class Rule:
     condition: str  # Expression string for AST evaluation
     actions: Dict[str, Any]  # Simple key-value actions
     tags: List[str] = field(default_factory=list)  # Rule metadata tags
-    triggers: List[str] = field(default_factory=list)  # Rules to trigger when this rule succeeds
+    triggers: List[str] = field(default_factory=list)  # Rules to trigger after this one fires
     
     def __post_init__(self):
         if not self.id or not isinstance(self.id, str):

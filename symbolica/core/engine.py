@@ -9,14 +9,13 @@ Focused on clear LLM explainability without overengineering.
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
 from .exceptions import ValidationError
 from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
 from .._internal.backward_chainer import BackwardChainer
-
 
 class Engine:
     """Simple rule engine for AI agents."""
@@ -30,6 +29,55 @@ class Engine:
         
         if self._rules:
             self._validate_rules()
+    
+    def register_function(self, name: str, func: Callable, allow_unsafe: bool = False) -> None:
+        """Register a custom function for use in rule conditions.
+        
+        Args:
+            name: Function name to use in conditions
+            func: Callable function (lambda recommended for safety)
+            allow_unsafe: If True, allows full functions (use with caution)
+            
+        Safety:
+            By default, only lambda functions are recommended for safety.
+            Full functions can hang the engine, consume memory, or have side effects.
+            Use allow_unsafe=True only if you trust the function completely.
+            
+        Example:
+            # Safe (recommended)
+            engine.register_function("risk_score", lambda score: 
+                "low" if score > 750 else "high" if score < 600 else "medium")
+            
+            # Unsafe (use with caution)
+            def complex_calc(x, y, z):
+                return x * y + z
+            engine.register_function("complex_calc", complex_calc, allow_unsafe=True)
+        """
+        import types
+        
+        # Enhanced safety checks
+        if not allow_unsafe:
+            # Check if function is a lambda by examining its name
+            if hasattr(func, '__name__') and func.__name__ == '<lambda>':
+                # Lambda is safe - proceed
+                pass
+            else:
+                raise ValueError(
+                    f"Function '{name}' is not a lambda. "
+                    f"For safety, only lambda functions are allowed by default. "
+                    f"Use allow_unsafe=True if you trust this function completely. "
+                    f"Note: Unsafe functions can hang the engine, consume memory, or have side effects."
+                )
+        
+        self._evaluator.register_function(name, func)
+    
+    def unregister_function(self, name: str) -> None:
+        """Remove a registered custom function."""
+        self._evaluator.unregister_function(name)
+    
+    def list_functions(self) -> Dict[str, str]:
+        """List all available functions (built-in + custom)."""
+        return self._evaluator.list_functions()
     
     @classmethod
     def from_yaml(cls, yaml_content: str) -> 'Engine':
