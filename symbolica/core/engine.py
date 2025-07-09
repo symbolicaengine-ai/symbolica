@@ -17,7 +17,6 @@ from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
 from .._internal.backward_chainer import BackwardChainer
 
-
 class Engine:
     """Simple rule engine for AI agents."""
     
@@ -31,19 +30,45 @@ class Engine:
         if self._rules:
             self._validate_rules()
     
-    def register_function(self, name: str, func: Callable) -> None:
+    def register_function(self, name: str, func: Callable, allow_unsafe: bool = False) -> None:
         """Register a custom function for use in rule conditions.
         
         Args:
             name: Function name to use in conditions
-            func: Callable function (lambda or regular function)
+            func: Callable function (lambda recommended for safety)
+            allow_unsafe: If True, allows full functions (use with caution)
+            
+        Safety:
+            By default, only lambda functions are recommended for safety.
+            Full functions can hang the engine, consume memory, or have side effects.
+            Use allow_unsafe=True only if you trust the function completely.
             
         Example:
+            # Safe (recommended)
             engine.register_function("risk_score", lambda score: 
                 "low" if score > 750 else "high" if score < 600 else "medium")
             
-            # Use in rule: "risk_score(credit_score) == 'low'"
+            # Unsafe (use with caution)
+            def complex_calc(x, y, z):
+                return x * y + z
+            engine.register_function("complex_calc", complex_calc, allow_unsafe=True)
         """
+        import types
+        
+        # Enhanced safety checks
+        if not allow_unsafe:
+            # Check if function is a lambda by examining its name
+            if hasattr(func, '__name__') and func.__name__ == '<lambda>':
+                # Lambda is safe - proceed
+                pass
+            else:
+                raise ValueError(
+                    f"Function '{name}' is not a lambda. "
+                    f"For safety, only lambda functions are allowed by default. "
+                    f"Use allow_unsafe=True if you trust this function completely. "
+                    f"Note: Unsafe functions can hang the engine, consume memory, or have side effects."
+                )
+        
         self._evaluator.register_function(name, func)
     
     def unregister_function(self, name: str) -> None:

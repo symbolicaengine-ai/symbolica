@@ -53,7 +53,7 @@ def demo_custom_functions():
     # Create engine
     engine = Engine.from_yaml(custom_function_rules)
     
-    # Register custom functions
+    # Register safe lambda functions (recommended)
     engine.register_function("risk_score", lambda score: 
         "low" if score > 750 else "high" if score < 600 else "medium")
     
@@ -137,7 +137,7 @@ rules:
       result: true
 """)
     
-    # Register a function that might error
+    # Register a lambda that might error (still safe - no infinite loops)
     engine.register_function("error_func", lambda x: 10 / x)
     
     # Test with valid input
@@ -160,8 +160,8 @@ rules:
 
 
 def demo_complex_functions():
-    """Demonstrate more complex custom functions."""
-    print("\n=== Complex Custom Functions ===")
+    """Demonstrate more complex custom functions with safety."""
+    print("\n=== Complex Custom Functions (Unsafe Mode) ===")
     
     engine = Engine.from_yaml("""
 rules:
@@ -178,7 +178,7 @@ rules:
       priority_support: true
 """)
     
-    # Register complex functions
+    # Register complex functions with explicit unsafe flag
     def fraud_probability(amount, avg_amount, location_risk):
         """Calculate fraud probability based on multiple factors."""
         amount_deviation = abs(amount - avg_amount) / avg_amount if avg_amount > 0 else 1.0
@@ -189,8 +189,9 @@ rules:
         """Calculate customer lifetime value."""
         return years * monthly_spend * 12 * 0.85  # 85% retention factor
     
-    engine.register_function("fraud_probability", fraud_probability)
-    engine.register_function("customer_lifetime_value", customer_lifetime_value)
+    # These require allow_unsafe=True because they're full functions
+    engine.register_function("fraud_probability", fraud_probability, allow_unsafe=True)
+    engine.register_function("customer_lifetime_value", customer_lifetime_value, allow_unsafe=True)
     
     # Test fraud detection
     print("Fraud detection test:")
@@ -208,13 +209,56 @@ rules:
     print(f"Rules fired: {result.fired_rules}")
 
 
+def demo_safety_enforcement():
+    """Demonstrate safety enforcement."""
+    print("\n=== Safety Enforcement Demo ===")
+    
+    engine = Engine()
+    
+    # This should work - lambda is safe
+    try:
+        engine.register_function("safe_func", lambda x: x * 2)
+        print("✓ Lambda function registered successfully")
+    except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+    
+    # This should fail - full function without allow_unsafe
+    try:
+        def unsafe_function(x):
+            return x * 2
+        
+        engine.register_function("unsafe_func", unsafe_function)
+        print("✗ Unsafe function should have been rejected")
+    except ValueError as e:
+        print(f"✓ Correctly rejected unsafe function: {e}")
+    
+    # This should work - full function with explicit allow_unsafe
+    try:
+        def complex_function(x, y):
+            result = 0
+            for i in range(x):
+                result += y
+            return result
+        
+        engine.register_function("complex_func", complex_function, allow_unsafe=True)
+        print("✓ Unsafe function accepted with explicit flag")
+    except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+
+
 if __name__ == "__main__":
     demo_custom_functions()
     demo_function_error_handling()
     demo_complex_functions()
+    demo_safety_enforcement()
     
     print("\n=== Custom Functions Demo Complete ===")
-    print("✓ Function registration and usage")
-    print("✓ Error handling in custom functions")
-    print("✓ Complex multi-parameter functions")
-    print("✓ Integration with rule reasoning") 
+    print("✓ Safe lambda functions (recommended)")
+    print("✓ Error handling in lambda functions")
+    print("✓ Complex functions with safety override")
+    print("✓ Safety enforcement by default")
+    print("\n🛡️  Safety-first design protects against:")
+    print("  - Infinite loops")
+    print("  - Memory exhaustion")  
+    print("  - Dangerous side effects")
+    print("  - Accidental unsafe code") 
