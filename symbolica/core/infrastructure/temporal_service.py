@@ -38,45 +38,55 @@ class TemporalService:
             function_registry: Function registry to register with
         """
         # Time-series aggregation functions
+        # Note: Using allow_unsafe=True because these are built-in system functions
         function_registry.register_function(
             "recent_avg", 
-            lambda key, duration: self._store.avg_in_window(key, duration)
+            lambda key, duration: self._store.avg_in_window(key, duration),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "recent_max", 
-            lambda key, duration: self._store.max_in_window(key, duration)
+            lambda key, duration: self._store.max_in_window(key, duration),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "recent_min", 
-            lambda key, duration: self._store.min_in_window(key, duration)
+            lambda key, duration: self._store.min_in_window(key, duration),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "recent_count", 
-            lambda key, duration: self._store.count_in_window(key, duration)
+            lambda key, duration: self._store.count_in_window(key, duration),
+            allow_unsafe=True
         )
         
         # Sustained condition functions
         function_registry.register_function(
             "sustained", 
-            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '>')
+            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '>'),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "sustained_above", 
-            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '>')
+            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '>'),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "sustained_below", 
-            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '<')
+            lambda key, threshold, duration: self._store.sustained_condition(key, threshold, duration, '<'),
+            allow_unsafe=True
         )
         
         # TTL fact functions
         function_registry.register_function(
             "ttl_fact", 
-            lambda key: self._store.get_ttl_fact(key)
+            lambda key: self._store.get_ttl_fact(key),
+            allow_unsafe=True
         )
         function_registry.register_function(
             "has_ttl_fact", 
-            lambda key: self._store.get_ttl_fact(key) is not None
+            lambda key: self._store.get_ttl_fact(key) is not None,
+            allow_unsafe=True
         )
     
     def store_datapoint(self, key: str, value: float, timestamp: Optional[float] = None) -> None:

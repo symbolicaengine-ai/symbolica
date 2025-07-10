@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Union
 
 from ..models import Rule
 from .exceptions import ValidationError
+from .schema_validator import SchemaValidator
 
 
 class ConditionParser:
@@ -71,17 +72,24 @@ class ConditionParser:
 
 
 class RuleLoader:
-    """Handles loading and parsing rules from various sources."""
+    """Handles loading and parsing rules from various sources with strict schema validation."""
     
-    def __init__(self):
+    def __init__(self, strict_validation: bool = True):
+        """Initialize RuleLoader.
+        
+        Args:
+            strict_validation: If True, enforces strict schema validation
+        """
         self.condition_parser = ConditionParser()
+        self.schema_validator = SchemaValidator()
+        self.strict_validation = strict_validation
     
     def from_yaml(self, yaml_content: str) -> List[Rule]:
-        """Create rules from YAML string."""
+        """Create rules from YAML string with schema validation."""
         return self._parse_yaml_rules(yaml_content)
     
     def from_file(self, file_path: Union[str, Path]) -> List[Rule]:
-        """Create rules from YAML file."""
+        """Create rules from YAML file with schema validation."""
         try:
             with open(file_path, 'r') as f:
                 yaml_content = f.read()
@@ -92,7 +100,7 @@ class RuleLoader:
             raise ValidationError(f"Error reading file {file_path}: {e}")
     
     def from_directory(self, directory_path: Union[str, Path]) -> List[Rule]:
-        """Create rules from directory containing YAML files."""
+        """Create rules from directory containing YAML files with schema validation."""
         all_rules = []
         directory = Path(directory_path)
         
@@ -116,56 +124,77 @@ class RuleLoader:
         
         return all_rules
     
-    def _parse_yaml_rules(self, yaml_content: str) -> List[Rule]:
-        """Parse YAML content into rules."""
+    def validate_yaml_schema(self, yaml_content: str) -> Dict[str, Any]:
+        """Validate YAML content against schema and return parsed data.
+        
+        Args:
+            yaml_content: YAML content string
+            
+        Returns:
+            Parsed and validated YAML data
+            
+        Raises:
+            ValidationError: If schema validation fails
+        """
         if not yaml_content or not yaml_content.strip():
             raise ValidationError("YAML content cannot be empty")
         
         try:
             data = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
-            raise ValidationError(f"Invalid YAML: {e}")
+            raise ValidationError(f"Invalid YAML syntax: {e}")
         
         if not data:
             raise ValidationError("YAML content is empty or invalid")
         
-        if not isinstance(data, dict):
-            raise ValidationError("YAML must contain a dictionary")
+        # Perform schema validation if enabled
+        if self.strict_validation:
+            self.schema_validator.validate_yaml_structure(data)
+            
+            # Validate each rule structure
+            if 'rules' in data:
+                for i, rule_dict in enumerate(data['rules']):
+                    self.schema_validator.validate_rule_structure(rule_dict, i)
         
-        if 'rules' not in data:
-            raise ValidationError("YAML must contain 'rules' key")
+        return data
+    
+    def get_schema_documentation(self) -> str:
+        """Get schema documentation for users.
         
-        if not isinstance(data['rules'], list):
-            raise ValidationError("'rules' must be a list")
+        Returns:
+            Human-readable schema documentation
+        """
+        return self.schema_validator.generate_schema_documentation()
+    
+    def get_reserved_keywords(self) -> set:
+        """Get set of reserved keywords.
         
-        if not data['rules']:
-            raise ValidationError("Rules list cannot be empty")
+        Returns:
+            Set of reserved keywords
+        """
+        return self.schema_validator.get_reserved_keywords()
+    
+    def _parse_yaml_rules(self, yaml_content: str) -> List[Rule]:
+        """Parse YAML content into rules with comprehensive validation."""
+        # First validate the schema
+        data = self.validate_yaml_schema(yaml_content)
+        
+        # Legacy validation fallback for basic structure (if strict validation disabled)
+        if not self.strict_validation:
+            self._legacy_validation(data)
         
         rules = []
         for i, rule_dict in enumerate(data['rules']):
             try:
-                rule = self._parse_single_rule(rule_dict)
+                rule = self._parse_single_rule(rule_dict, i)
                 rules.append(rule)
             except Exception as e:
                 raise ValidationError(f"Error parsing rule at index {i}: {e}")
         
         return rules
     
-    def _parse_single_rule(self, rule_dict: Dict[str, Any]) -> Rule:
-        """Parse a single rule dictionary into a Rule object."""
-        if not isinstance(rule_dict, dict):
-            raise ValidationError("Rule must be a dictionary")
-        
-        # Validate required fields
-        if 'id' not in rule_dict:
-            raise ValidationError("Rule must have 'id' field")
-        
-        if not rule_dict.get('condition') and not rule_dict.get('if'):
-            raise ValidationError("Rule must have 'condition' or 'if' field")
-        
-        if not rule_dict.get('actions') and not rule_dict.get('then'):
-            raise ValidationError("Rule must have 'actions' or 'then' field")
-        
+    def _parse_single_rule(self, rule_dict: Dict[str, Any], rule_index: int) -> Rule:
+        """Parse a single rule dictionary into a Rule object with enhanced validation."""
         # Extract and process condition
         condition = rule_dict.get('condition') or rule_dict.get('if')
         if isinstance(condition, dict):
@@ -181,14 +210,44 @@ class RuleLoader:
         if not actions:
             raise ValidationError("Actions cannot be empty")
         
+        # Extract facts (optional)
+        facts = rule_dict.get('facts', {})
+        if not isinstance(facts, dict):
+            raise ValidationError("Facts must be a dictionary")
+        
+        # Additional validation for enabled field
+        enabled = rule_dict.get('enabled', True)
+        if not isinstance(enabled, bool):
+            raise ValidationError("'enabled' field must be a boolean")
+        
+        # Skip disabled rules
+        if not enabled:
+            # Create a disabled rule marker (could be filtered out later)
+            pass
+        
         # Create rule with validation
         rule = Rule(
             id=str(rule_dict['id']),
             priority=int(rule_dict.get('priority', 0)),
             condition=condition.strip(),
             actions=actions,
+            facts=facts,
             tags=list(rule_dict.get('tags', [])),
             triggers=list(rule_dict.get('triggers', []))
         )
         
-        return rule 
+        return rule
+    
+    def _legacy_validation(self, data: Dict[str, Any]) -> None:
+        """Legacy validation for when strict validation is disabled."""
+        if not isinstance(data, dict):
+            raise ValidationError("YAML must contain a dictionary")
+        
+        if 'rules' not in data:
+            raise ValidationError("YAML must contain 'rules' key")
+        
+        if not isinstance(data['rules'], list):
+            raise ValidationError("'rules' must be a list")
+        
+        if not data['rules']:
+            raise ValidationError("Rules list cannot be empty") 
