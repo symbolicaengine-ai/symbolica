@@ -8,8 +8,10 @@ Optimized for large rule sets with complex dependencies.
 
 from typing import Dict, List, Set, Optional, Any, TYPE_CHECKING
 from collections import defaultdict, deque
+import logging
 
 from ..core.interfaces import ExecutionStrategy
+from ..core.exceptions import DAGError, EvaluationError
 
 if TYPE_CHECKING:
     from ..core.models import Rule, ExecutionContext
@@ -28,6 +30,7 @@ class DAGStrategy(ExecutionStrategy):
     def __init__(self, evaluator: Optional['ConditionEvaluator'] = None):
         self.evaluator = evaluator
         self._dependency_cache: Dict[str, Set[str]] = {}
+        self.logger = logging.getLogger('symbolica.DAGStrategy')
     
     def get_execution_order(self, rules: List['Rule']) -> List['Rule']:
         """Get rules in dependency-aware execution order."""
@@ -41,13 +44,37 @@ class DAGStrategy(ExecutionStrategy):
         """Build dependency graph from rules including field dependencies and rule chaining."""
         graph = defaultdict(set)
         
-        # Create mapping from rule ID to rule
+        # Create mapping from rule ID to rule and collect what facts each rule produces
         rule_map = {rule.id: rule for rule in rules}
+        rule_produces = {}  # rule_id -> set of fact names it produces
+        rule_consumes = {}  # rule_id -> set of fact names it consumes
         
+        # Analyze what each rule produces and consumes
         for rule in rules:
-            # Skip field-based dependencies for now to avoid circular dependencies
-            # The explicit trigger relationships will handle proper ordering
-            pass
+            # Facts this rule produces (from actions)
+            produces = set(rule.actions.keys()) if rule.actions else set()
+            rule_produces[rule.id] = produces
+            
+            # Facts this rule consumes (from condition fields)
+            try:
+                consumes = self._get_rule_dependencies(rule)
+                rule_consumes[rule.id] = consumes
+            except (AttributeError, TypeError, ValueError, EvaluationError) as e:
+                # Log field extraction failure and assume no dependencies
+                self.logger.warning(
+                    f"Failed to extract dependencies for rule '{rule.id}': {str(e)}",
+                    extra={'rule_id': rule.id, 'condition': rule.condition}
+                )
+                rule_consumes[rule.id] = set()
+        
+        # Build field-based dependencies: if rule A produces fact X and rule B consumes fact X,
+        # then rule B depends on rule A
+        for consumer_id, consumed_facts in rule_consumes.items():
+            for producer_id, produced_facts in rule_produces.items():
+                if consumer_id != producer_id:  # Don't create self-dependencies
+                    # If consumer needs any fact that producer creates
+                    if consumed_facts & produced_facts:
+                        graph[consumer_id].add(producer_id)
         
         # Add explicit rule chaining dependencies
         for rule in rules:
@@ -68,8 +95,12 @@ class DAGStrategy(ExecutionStrategy):
                 fields = self.evaluator.extract_fields(rule.condition)
                 self._dependency_cache[rule.id] = fields
                 return fields
-        except:
-            pass
+        except (AttributeError, TypeError, ValueError, SyntaxError, EvaluationError) as e:
+            # Log field extraction failure and fall back to empty set
+            self.logger.debug(
+                f"Field extraction failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
         
         # Fallback to empty set if no evaluator or extraction fails
         self._dependency_cache[rule.id] = set()
@@ -85,10 +116,11 @@ class DAGStrategy(ExecutionStrategy):
             for dependency in graph[rule_id]:
                 in_degree[rule_id] += 1
         
-        # Sort by priority within each level
+        # Sort by priority within each level (higher priority first)
         queue = deque(sorted(
             [rule for rule in rules if in_degree[rule.id] == 0],
-            key=lambda r: r.priority
+            key=lambda r: r.priority,
+            reverse=True
         ))
         
         result = []
@@ -106,15 +138,23 @@ class DAGStrategy(ExecutionStrategy):
                     if in_degree[rule_id] == 0:
                         rules_to_update.append(rule_map[rule_id])
             
-            # Add newly available rules to queue, sorted by priority
-            for rule in sorted(rules_to_update, key=lambda r: r.priority):
+            # Add newly available rules to queue, sorted by priority (higher priority first)
+            for rule in sorted(rules_to_update, key=lambda r: r.priority, reverse=True):
                 queue.append(rule)
         
         # Check for cycles
         if len(result) != len(rules):
-            # Fall back to priority-based sorting
             remaining = [rule for rule in rules if rule not in result]
-            result.extend(sorted(remaining, key=lambda r: r.priority))
+            remaining_ids = [rule.id for rule in remaining]
+            
+            # Log the cycle detection
+            self.logger.warning(
+                f"Circular dependencies detected in rules: {remaining_ids}. Using priority fallback.",
+                extra={'cycle_rules': remaining_ids, 'completed_rules': len(result)}
+            )
+            
+            # Fall back to priority-based sorting (higher priority first)
+            result.extend(sorted(remaining, key=lambda r: r.priority, reverse=True))
         
         return result
     

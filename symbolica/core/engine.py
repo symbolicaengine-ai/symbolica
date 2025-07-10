@@ -3,38 +3,115 @@ Symbolica Rule Engine
 =====================
 
 Simple, deterministic rule engine for AI agent decision-making.
-Focused on clear LLM explainability without overengineering.
+Refactored to use focused components following Single Responsibility Principle.
 """
 
 import time
-import yaml
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
-from .exceptions import ValidationError
+from .exceptions import (
+    ValidationError, ExecutionError, EvaluationError, 
+    DAGError, ConfigurationError, ErrorCollector, FunctionError
+)
+from .loader import RuleLoader
+from .function_registry import FunctionRegistry
+from .validation_service import ValidationService
+from .temporal_service import TemporalService
 from .._internal.evaluator import ASTEvaluator
 from .._internal.dag import DAGStrategy
 from .._internal.backward_chainer import BackwardChainer
-from .._internal.temporal_store import TemporalStore
+
 
 class Engine:
-    """Simple rule engine for AI agents."""
+    """Simple rule engine for AI agents.
     
-    def __init__(self, rules: Optional[List[Rule]] = None):
-        """Initialize engine with rules."""
+    Orchestrates rule execution using focused, single-responsibility components.
+    No longer a God Class - delegates specific responsibilities to specialized services.
+    """
+    
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.logger = logging.getLogger(f'symbolica.{cls.__name__}')
+    
+    def __init__(self, 
+                 rules: Optional[List[Rule]] = None,
+                 temporal_config: Optional[Dict[str, Any]] = None,
+                 execution_config: Optional[Dict[str, Any]] = None):
+        """Initialize engine with rules and optional configuration.
+        
+        Args:
+            rules: Optional list of rules to initialize with
+            temporal_config: Optional temporal service configuration
+            execution_config: Optional execution configuration (max_iterations, etc.)
+        """
+        # Initialize logger
+        self.logger = logging.getLogger('symbolica.Engine')
+        
+        # Initialize core components
         self._rules = rules or []
+        self._function_registry = FunctionRegistry()
+        self._validation_service = ValidationService()
+        self._rule_loader = RuleLoader()
+        
+        # Initialize temporal service with configuration
+        temporal_config = temporal_config or {}
+        self._temporal_service = TemporalService(
+            max_age_seconds=temporal_config.get('max_age_seconds', 3600),
+            max_points_per_key=temporal_config.get('max_points_per_key', 1000),
+            cleanup_interval=temporal_config.get('cleanup_interval', 300)
+        )
+        
+        # Initialize execution configuration
+        execution_config = execution_config or {}
+        self._max_iterations = execution_config.get('max_iterations', 10)
+        
+        # Initialize execution components
         self._evaluator = ASTEvaluator()
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
-        self._temporal_store = TemporalStore()
         
-        # Register temporal functions as safe lambdas
-        self._register_temporal_functions()
+        # Register temporal functions and built-in functions
+        self._setup_functions()
         
+        # Validate rules if provided
         if self._rules:
-            self._validate_rules()
+            self._validation_service.validate_rules(self._rules)
     
+    def _setup_functions(self) -> None:
+        """Set up function registrations."""
+        # Register temporal functions
+        self._temporal_service.register_temporal_functions(self._function_registry)
+        
+        # Connect function registry to evaluator
+        for name, func in self._function_registry._functions.items():
+            self._evaluator.register_function(name, func)
+    
+    # Rule Loading Methods (delegated to RuleLoader)
+    @classmethod
+    def from_yaml(cls, yaml_content: str, **kwargs) -> 'Engine':
+        """Create engine from YAML string."""
+        loader = RuleLoader()
+        rules = loader.from_yaml(yaml_content)
+        return cls(rules, **kwargs)
+    
+    @classmethod
+    def from_file(cls, file_path: Union[str, Path], **kwargs) -> 'Engine':
+        """Create engine from YAML file."""
+        loader = RuleLoader()
+        rules = loader.from_file(file_path)
+        return cls(rules, **kwargs)
+    
+    @classmethod
+    def from_directory(cls, directory_path: Union[str, Path], **kwargs) -> 'Engine':
+        """Create engine from directory containing YAML files."""
+        loader = RuleLoader()
+        rules = loader.from_directory(directory_path)
+        return cls(rules, **kwargs)
+    
+    # Function Management (delegated to FunctionRegistry)
     def register_function(self, name: str, func: Callable, allow_unsafe: bool = False) -> None:
         """Register a custom function for use in rule conditions.
         
@@ -42,80 +119,50 @@ class Engine:
             name: Function name to use in conditions
             func: Callable function (lambda recommended for safety)
             allow_unsafe: If True, allows full functions (use with caution)
-            
-        Safety:
-            By default, only lambda functions are recommended for safety.
-            Full functions can hang the engine, consume memory, or have side effects.
-            Use allow_unsafe=True only if you trust the function completely.
-            
-        Example:
-            # Safe (recommended)
-            engine.register_function("risk_score", lambda score: 
-                "low" if score > 750 else "high" if score < 600 else "medium")
-            
-            # Unsafe (use with caution)
-            def complex_calc(x, y, z):
-                return x * y + z
-            engine.register_function("complex_calc", complex_calc, allow_unsafe=True)
         """
-        import types
-        
-        # Enhanced safety checks
-        if not allow_unsafe:
-            # Check if function is a lambda by examining its name
-            if hasattr(func, '__name__') and func.__name__ == '<lambda>':
-                # Lambda is safe - proceed
-                pass
-            else:
-                raise ValueError(
-                    f"Function '{name}' is not a lambda. "
-                    f"For safety, only lambda functions are allowed by default. "
-                    f"Use allow_unsafe=True if you trust this function completely. "
-                    f"Note: Unsafe functions can hang the engine, consume memory, or have side effects."
-                )
-        
+        self._function_registry.register_function(name, func, allow_unsafe)
+        # Also register with evaluator
         self._evaluator.register_function(name, func)
     
     def unregister_function(self, name: str) -> None:
         """Remove a registered custom function."""
+        self._function_registry.unregister_function(name)
         self._evaluator.unregister_function(name)
     
     def list_functions(self) -> Dict[str, str]:
-        """List all available functions (built-in + custom)."""
-        return self._evaluator.list_functions()
+        """List all available functions (built-in + custom + temporal)."""
+        # Combine built-in functions from evaluator with custom functions
+        builtin_functions = {
+            'len': 'Get length of sequence',
+            'sum': 'Sum elements of sequence', 
+            'abs': 'Absolute value',
+            'startswith': 'Check if string starts with substring',
+            'endswith': 'Check if string ends with substring',
+            'contains': 'Check if sequence contains element'
+        }
+        custom_functions = self._function_registry.list_functions()
+        return {**builtin_functions, **custom_functions}
     
-    @classmethod
-    def from_yaml(cls, yaml_content: str) -> 'Engine':
-        """Create engine from YAML string."""
-        rules = cls._parse_yaml_rules(yaml_content)
-        return cls(rules)
+    # Temporal Operations (delegated to TemporalService)
+    def store_datapoint(self, key: str, value: float, timestamp: Optional[float] = None) -> None:
+        """Store a time-series data point for use in temporal functions."""
+        self._temporal_service.store_datapoint(key, value, timestamp)
     
-    @classmethod
-    def from_file(cls, file_path: Union[str, Path]) -> 'Engine':
-        """Create engine from YAML file."""
-        try:
-            with open(file_path, 'r') as f:
-                yaml_content = f.read()
-            return cls.from_yaml(yaml_content)
-        except FileNotFoundError:
-            raise ValidationError(f"File not found: {file_path}")
+    def set_ttl_fact(self, key: str, value: Any, ttl_seconds: int) -> None:
+        """Set a fact with time-to-live (TTL)."""
+        self._temporal_service.set_ttl_fact(key, value, ttl_seconds)
     
-    @classmethod
-    def from_directory(cls, directory_path: Union[str, Path]) -> 'Engine':
-        """Create engine from directory containing YAML files."""
-        all_rules = []
-        for yaml_file in Path(directory_path).rglob("*.yaml"):
-            with open(yaml_file, 'r') as f:
-                file_rules = cls._parse_yaml_rules(f.read())
-                all_rules.extend(file_rules)
-        
-        if not all_rules:
-            raise ValidationError(f"No rules found in {directory_path}")
-        
-        return cls(all_rules)
+    def get_temporal_stats(self) -> Dict[str, Any]:
+        """Get temporal store statistics."""
+        return self._temporal_service.get_stats()
     
+    def cleanup_temporal_data(self) -> Dict[str, int]:
+        """Force cleanup of old temporal data."""
+        return self._temporal_service.cleanup_old_data()
+    
+    # Core Execution Logic (simplified and focused)  
     def reason(self, input_facts: Union[Facts, Dict[str, Any]]) -> ExecutionResult:
-        """Execute rules against facts and return result with simple explanation."""
+        """Execute rules against facts and return result with explanation."""
         start_time = time.perf_counter()
         
         # Convert dictionary to Facts if needed
@@ -129,17 +176,8 @@ class Engine:
             fired_rules=[]
         )
         
-        # Execute rules in dependency-aware order (includes chaining)
-        execution_order = self._dag_strategy.get_execution_order(self._rules)
-        triggered_rules = set()  # Track which rules were triggered
-        
-        for rule in execution_order:
-            # Check if this rule was triggered by another rule
-            triggered_by = self._find_triggering_rule(rule, context.fired_rules)
-            if triggered_by:
-                triggered_rules.add(rule.id)
-            
-            self._execute_rule(rule, context, triggered_by)
+        # Execute rules iteratively until convergence
+        self._execute_rules_iteratively(context)
         
         # Build result
         execution_time_ms = (time.perf_counter() - start_time) * 1000
@@ -150,8 +188,72 @@ class Engine:
             reasoning=context.reasoning
         )
     
-    def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> None:
-        """Execute a single rule."""
+    def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
+        """Execute rules iteratively until no new rules fire (convergence)."""
+        
+        for iteration in range(self._max_iterations):
+            rules_fired_this_iteration = 0
+            
+            # Get rules that haven't fired yet
+            remaining_rules = [rule for rule in self._rules if rule.id not in context.fired_rules]
+            if not remaining_rules:
+                break
+            
+            # Get execution order (dependency-aware with priority fallback)
+            execution_order = self._get_execution_order(remaining_rules)
+            
+            # Execute rules that can fire
+            for rule in execution_order:
+                if self._can_rule_fire(rule, context):
+                    triggered_by = self._find_triggering_rule(rule, context.fired_rules)
+                    if self._execute_rule(rule, context, triggered_by):
+                        rules_fired_this_iteration += 1
+            
+            # If no rules fired this iteration, we've reached convergence
+            if rules_fired_this_iteration == 0:
+                break
+    
+    def _get_execution_order(self, rules: List[Rule]) -> List[Rule]:
+        """Get rule execution order with DAG strategy and priority fallback."""
+        try:
+            return self._dag_strategy.get_execution_order(rules)
+        except Exception as e:
+            # Log the DAG failure and use priority fallback
+            self.logger.warning(
+                f"DAG strategy failed, falling back to priority ordering: {str(e)}",
+                extra={'rule_count': len(rules), 'rule_ids': [r.id for r in rules]}
+            )
+            return sorted(rules, key=lambda r: r.priority, reverse=True)
+    
+    def _can_rule_fire(self, rule: Rule, context: ExecutionContext) -> bool:
+        """Check if a rule's condition is satisfied and it hasn't fired yet."""
+        if rule.id in context.fired_rules:
+            return False
+            
+        try:
+            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+            return trace.result
+        except (EvaluationError, FunctionError) as e:
+            # Log evaluation failures but continue execution
+            self.logger.warning(
+                f"Rule condition evaluation failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
+            return False
+        except Exception as e:
+            # Log unexpected errors but continue execution
+            self.logger.error(
+                f"Unexpected error evaluating rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
+            return False
+    
+    def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> bool:
+        """Execute a single rule with proper error handling.
+        
+        Returns:
+            True if the rule fired, False otherwise
+        """
         try:
             # Evaluate with trace to get detailed explanation
             trace = self._evaluator.evaluate_with_trace(rule.condition, context)
@@ -166,9 +268,32 @@ class Engine:
                 actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
-        except Exception:
-            # Skip rule if evaluation fails
-            pass
+                
+                return True
+                
+        except (EvaluationError, FunctionError) as e:
+            # Rule execution failed - log and record in context
+            self.logger.warning(
+                f"Rule execution failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition, 'triggered_by': triggered_by}
+            )
+            context.rule_fired(rule.id, f"Rule execution failed: {str(e)}", triggered_by)
+        except (AttributeError, TypeError, ValueError, SyntaxError) as e:
+            # Python evaluation errors - log and record
+            self.logger.warning(
+                f"Python evaluation error in rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
+            context.rule_fired(rule.id, f"Rule execution failed: {str(e)}", triggered_by)
+        except Exception as e:
+            # Unexpected error - log as error and continue
+            self.logger.error(
+                f"Unexpected error in rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition, 'triggered_by': triggered_by}
+            )
+            context.rule_fired(rule.id, f"Unexpected error in rule: {str(e)}", triggered_by)
+        
+        return False
     
     def _find_triggering_rule(self, rule: Rule, fired_rules: List[str]) -> Optional[str]:
         """Find which rule triggered this rule, if any."""
@@ -178,6 +303,7 @@ class Engine:
                 return fired_rule_id
         return None
     
+    # Backward Chaining (delegated to BackwardChainer)
     def find_rules_for_goal(self, goal: Goal) -> List[Rule]:
         """Find rules that can produce the goal (reverse DAG search)."""
         return self._backward_chainer.find_supporting_rules(goal)
@@ -189,209 +315,128 @@ class Engine:
         
         return self._backward_chainer.can_achieve_goal(goal, current_facts)
     
-    def _register_temporal_functions(self) -> None:
-        """Register temporal functions as safe lambda functions."""
-        # Time-series aggregation functions
-        self.register_function("recent_avg", lambda key, duration: self._temporal_store.avg_in_window(key, duration))
-        self.register_function("recent_max", lambda key, duration: self._temporal_store.max_in_window(key, duration))
-        self.register_function("recent_min", lambda key, duration: self._temporal_store.min_in_window(key, duration))
-        self.register_function("recent_count", lambda key, duration: self._temporal_store.count_in_window(key, duration))
-        
-        # Sustained condition function
-        self.register_function("sustained", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '>'))
-        self.register_function("sustained_above", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '>'))
-        self.register_function("sustained_below", lambda key, threshold, duration: self._temporal_store.sustained_condition(key, threshold, duration, '<'))
-        
-        # TTL facts
-        self.register_function("ttl_fact", lambda key: self._temporal_store.get_ttl_fact(key))
-        self.register_function("has_ttl_fact", lambda key: self._temporal_store.get_ttl_fact(key) is not None)
-    
-    def store_datapoint(self, key: str, value: float, timestamp: Optional[float] = None) -> None:
-        """
-        Store a time-series data point for use in temporal functions.
+    # Rule Management
+    def add_rule(self, rule: Rule) -> None:
+        """Add a rule to the engine.
         
         Args:
-            key: Metric key (e.g., 'cpu_utilization', 'error_rate')
-            value: Numeric value
-            timestamp: Optional timestamp (defaults to current time)
+            rule: Rule to add
             
-        Example:
-            engine.store_datapoint("cpu_utilization", 85.2)
-            engine.store_datapoint("response_time", 450)
+        Raises:
+            ValidationError: If rule is invalid or conflicts with existing rules
         """
-        self._temporal_store.store_datapoint(key, value, timestamp)
+        # Validate the new rule
+        self._validation_service._validate_single_rule(rule)
+        
+        # Check for ID conflicts
+        if any(r.id == rule.id for r in self._rules):
+            raise ValidationError(f"Rule with ID '{rule.id}' already exists")
+        
+        # Add rule
+        self._rules.append(rule)
+        
+        # Validate the complete rule set
+        self._validation_service.validate_rules(self._rules)
+        
+        # Update backward chainer
+        self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
     
-    def set_ttl_fact(self, key: str, value: Any, ttl_seconds: int) -> None:
-        """
-        Set a fact with time-to-live (TTL).
+    def remove_rule(self, rule_id: str) -> bool:
+        """Remove a rule by ID.
         
         Args:
-            key: Fact key
-            value: Fact value (any type)
-            ttl_seconds: Time to live in seconds
+            rule_id: ID of rule to remove
             
-        Example:
-            engine.set_ttl_fact("maintenance_mode", True, 3600)  # 1 hour
-            engine.set_ttl_fact("user_session", user_data, 1800)  # 30 minutes
+        Returns:
+            True if rule was removed, False if not found
         """
-        self._temporal_store.set_ttl_fact(key, value, ttl_seconds)
-    
-    def get_temporal_stats(self) -> Dict[str, Any]:
-        """Get temporal store statistics."""
-        return self._temporal_store.get_stats()
-    
-    def cleanup_temporal_data(self) -> Dict[str, int]:
-        """Force cleanup of old temporal data. Returns cleanup statistics."""
-        return self._temporal_store.cleanup_old_data()
-    
-    def _validate_rules(self) -> None:
-        """Basic rule validation including chaining validation."""
-        rule_ids = [rule.id for rule in self._rules]
-        if len(rule_ids) != len(set(rule_ids)):
-            raise ValidationError("Duplicate rule IDs found")
+        original_count = len(self._rules)
+        self._rules = [r for r in self._rules if r.id != rule_id]
         
-        # Validate rule chaining
-        self._validate_rule_chaining()
+        if len(self._rules) < original_count:
+            # Re-validate remaining rules
+            self._validation_service.validate_rules(self._rules)
+            # Update backward chainer
+            self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
+            return True
+        
+        return False
     
-    def _validate_rule_chaining(self) -> None:
-        """Validate rule chaining to prevent circular dependencies."""
-        rule_ids = {rule.id for rule in self._rules}
+    def get_rule(self, rule_id: str) -> Optional[Rule]:
+        """Get rule by ID."""
+        return next((rule for rule in self._rules if rule.id == rule_id), None)
+    
+    def update_rule(self, rule_id: str, updated_rule: Rule) -> bool:
+        """Update an existing rule.
         
-        # Check that all triggered rules exist
-        for rule in self._rules:
-            for triggered_id in rule.triggers:
-                if triggered_id not in rule_ids:
-                    raise ValidationError(f"Rule '{rule.id}' triggers unknown rule '{triggered_id}'")
+        Args:
+            rule_id: ID of rule to update
+            updated_rule: New rule definition
+            
+        Returns:
+            True if rule was updated, False if not found
+            
+        Raises:
+            ValidationError: If updated rule is invalid
+        """
+        # Find rule index
+        rule_index = None
+        for i, rule in enumerate(self._rules):
+            if rule.id == rule_id:
+                rule_index = i
+                break
         
-        # Check for circular dependencies using DFS
-        def has_cycle(start_rule_id: str, visited: set, path: set) -> bool:
-            if start_rule_id in path:
-                return True
-            if start_rule_id in visited:
-                return False
-            
-            visited.add(start_rule_id)
-            path.add(start_rule_id)
-            
-            # Find the rule with this ID
-            rule = next((r for r in self._rules if r.id == start_rule_id), None)
-            if rule:
-                for triggered_id in rule.triggers:
-                    if has_cycle(triggered_id, visited, path):
-                        return True
-            
-            path.remove(start_rule_id)
+        if rule_index is None:
             return False
         
-        visited = set()
-        for rule in self._rules:
-            if rule.id not in visited:
-                if has_cycle(rule.id, visited, set()):
-                    raise ValidationError(f"Circular dependency detected in rule chaining involving rule '{rule.id}'")
+        # Validate updated rule
+        self._validation_service._validate_single_rule(updated_rule)
+        
+        # Check if ID changed and conflicts
+        if updated_rule.id != rule_id:
+            if any(r.id == updated_rule.id for r in self._rules):
+                raise ValidationError(f"Rule with ID '{updated_rule.id}' already exists")
+        
+        # Update rule
+        self._rules[rule_index] = updated_rule
+        
+        # Validate the complete rule set
+        self._validation_service.validate_rules(self._rules)
+        
+        # Update backward chainer
+        self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
+        
+        return True
     
-    @staticmethod
-    def _parse_yaml_rules(yaml_content: str) -> List[Rule]:
-        """Parse YAML content into rules."""
-        try:
-            data = yaml.safe_load(yaml_content)
-        except yaml.YAMLError as e:
-            raise ValidationError(f"Invalid YAML: {e}")
+    # Analytics and Introspection
+    def get_analysis(self) -> Dict[str, Any]:
+        """Get comprehensive analysis of the rule engine."""
+        dependency_analysis = self._validation_service.get_dependency_analysis(self._rules)
+        temporal_stats = self._temporal_service.get_stats()
+        function_stats = {
+            'custom_functions': self._function_registry.function_count(),
+            'total_functions': len(self.list_functions())
+        }
         
-        if not data or 'rules' not in data:
-            raise ValidationError("YAML must contain 'rules' key")
-        
-        rules = []
-        for rule_dict in data['rules']:
-            # Handle structured conditions by converting to string
-            condition = rule_dict.get('condition') or rule_dict.get('if')
-            if isinstance(condition, dict):
-                condition = Engine._convert_condition(condition)
-            
-            actions = rule_dict.get('actions') or rule_dict.get('then', {})
-            
-            rule = Rule(
-                id=rule_dict['id'],
-                priority=rule_dict.get('priority', 0),
-                condition=condition,
-                actions=actions,
-                tags=rule_dict.get('tags', []),
-                triggers=rule_dict.get('triggers', [])
-            )
-            rules.append(rule)
-        
-        return rules
-    
-    @staticmethod
-    def _convert_condition(condition_dict: Dict[str, Any]) -> str:
-        """Convert structured condition to evaluatable string expression."""
-        def _process_condition_node(node: Any) -> str:
-            """Recursively process condition nodes."""
-            if isinstance(node, str):
-                # Base case: string condition
-                return node.strip()
-            
-            elif isinstance(node, dict):
-                # Structured condition node
-                if not node:
-                    raise ValidationError("Empty condition dictionary")
-                
-                # Handle multiple keys at same level (combine with AND)
-                subconditions = []
-                for key, value in node.items():
-                    
-                    if key == 'all':
-                        if not isinstance(value, list) or not value:
-                            raise ValidationError("'all' must contain a non-empty list of conditions")
-                        conditions = [f"({_process_condition_node(item)})" for item in value]
-                        subconditions.append(" and ".join(conditions))
-                    
-                    elif key == 'any':
-                        if not isinstance(value, list) or not value:
-                            raise ValidationError("'any' must contain a non-empty list of conditions")
-                        conditions = [f"({_process_condition_node(item)})" for item in value]
-                        subconditions.append(f"({' or '.join(conditions)})")
-                    
-                    elif key == 'not':
-                        if value is None or value == "":
-                            raise ValidationError("'not' must contain a valid condition")
-                        subconditions.append(f"not ({_process_condition_node(value)})")
-                    
-                    else:
-                        raise ValidationError(f"Unknown structured condition key: '{key}'. Valid keys are: all, any, not")
-                
-                # Combine all subconditions with AND
-                if len(subconditions) == 1:
-                    return subconditions[0]
-                else:
-                    return " and ".join([f"({cond})" for cond in subconditions])
-            
-            elif isinstance(node, list):
-                raise ValidationError("Lists must be contained within 'all' or 'any' structures")
-            
-            else:
-                raise ValidationError(f"Invalid condition node type: {type(node)}. Must be string or dict")
-        
-        return _process_condition_node(condition_dict)
+        analysis = {
+            'rule_count': len(self._rules),  # Add rule_count at top level for backward compatibility
+            'rule_analysis': {
+                'rule_count': len(self._rules),
+                'rule_ids': [rule.id for rule in self._rules],
+                'avg_priority': sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0,
+                **dependency_analysis
+            },
+            'temporal_analysis': temporal_stats,
+            'function_analysis': function_stats
+        }
+        return analysis
     
     @property
     def rules(self) -> List[Rule]:
-        """Get all rules."""
+        """Get all rules (read-only copy)."""
         return self._rules.copy()
     
     @property
     def rule_count(self) -> int:
         """Get rule count."""
-        return len(self._rules)
-    
-    # Simple methods for test compatibility
-    def get_analysis(self) -> Dict[str, Any]:
-        """Get basic rule analysis."""
-        return {
-            'rule_count': len(self._rules),
-            'rule_ids': [rule.id for rule in self._rules],
-            'avg_priority': sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0
-        }
-    
-    def get_rule(self, rule_id: str) -> Optional[Rule]:
-        """Get rule by ID."""
-        return next((rule for rule in self._rules if rule.id == rule_id), None) 
+        return len(self._rules) 
