@@ -199,7 +199,7 @@ def demo_sla_monitoring():
     print(f"  SLA Violated: {'sla_violated' in result.verdict}")
     
     # Show temporal statistics
-    recent_avg = engine._temporal_store.avg_in_window("response_time", 3600)
+    recent_avg = engine._temporal_service._store.avg_in_window("response_time", 3600)
     print(f"  Average response time (1 hour): {recent_avg:.1f}ms")
 
 def demo_maintenance_mode():
@@ -220,7 +220,7 @@ def demo_maintenance_mode():
     print(f"Maintenance mode active: {result2.verdict}")
     
     # Check if maintenance is active
-    maintenance_active = engine._temporal_store.get_ttl_fact("maintenance_mode")
+    maintenance_active = engine._temporal_service._store.get_ttl_fact("maintenance_mode")
     print(f"Maintenance mode fact: {maintenance_active}")
 
 def demo_complex_scenario():
