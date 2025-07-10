@@ -181,18 +181,12 @@ class RuleLoader:
         if not actions:
             raise ValidationError("Actions cannot be empty")
         
-        # Extract facts (optional)
-        facts = rule_dict.get('facts', {})
-        if not isinstance(facts, dict):
-            raise ValidationError("Facts must be a dictionary")
-        
         # Create rule with validation
         rule = Rule(
             id=str(rule_dict['id']),
             priority=int(rule_dict.get('priority', 0)),
             condition=condition.strip(),
             actions=actions,
-            facts=facts,
             tags=list(rule_dict.get('tags', [])),
             triggers=list(rule_dict.get('triggers', []))
         )

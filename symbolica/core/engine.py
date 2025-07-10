@@ -266,7 +266,6 @@ class Engine:
             fired_rules=context.fired_rules,
             execution_time_ms=execution_time_ms,
             reasoning=context.reasoning,
-            intermediate_facts=context.intermediate_facts,
             _context=context  # Store context for rich tracing access
         )
     
@@ -353,16 +352,7 @@ class Engine:
                 detailed_reason = trace.explain()
             
             if trace_result:
-                # Apply facts first (intermediate state available to other rules)
-                evaluated_facts = {}
-                if rule.facts:
-                    for key, value in rule.facts.items():
-                        # Evaluate expressions, keep literals as-is
-                        evaluated_value = self._evaluate_action_value(value, context)
-                        context.set_intermediate_fact(key, evaluated_value)
-                        evaluated_facts[key] = evaluated_value
-                
-                # Apply actions (final outputs)
+                # Apply actions with expression evaluation
                 evaluated_actions = {}
                 for key, value in rule.actions.items():
                     # Evaluate expressions, keep literals as-is
@@ -371,17 +361,8 @@ class Engine:
                     evaluated_actions[key] = evaluated_value
                 
                 # Record detailed reasoning using trace
-                fact_items = [f"{k}={v}" for k, v in evaluated_facts.items()] if evaluated_facts else []
-                action_items = [f"{k}={v}" for k, v in evaluated_actions.items()]
-                
-                if fact_items and action_items:
-                    outputs_str = f"facts: {', '.join(fact_items)}, actions: {', '.join(action_items)}"
-                elif fact_items:
-                    outputs_str = f"facts: {', '.join(fact_items)}"
-                else:
-                    outputs_str = f"actions: {', '.join(action_items)}"
-                
-                reason = f"{detailed_reason}, set {outputs_str}"
+                actions_str = ", ".join([f"{k}={v}" for k, v in evaluated_actions.items()])
+                reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
                 
                 return True

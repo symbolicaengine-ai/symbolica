@@ -70,16 +70,6 @@ class ValidationService:
         if empty_actions and len(empty_actions) == len(rule.actions):
             raise ValidationError(f"Rule '{rule.id}' cannot have all actions set to None")
         
-        # Facts validation (optional field)
-        if not isinstance(rule.facts, dict):
-            raise ValidationError(f"Rule '{rule.id}' facts must be a dictionary")
-        
-        # Facts can be empty (optional), but if provided, check for reasonable values
-        if rule.facts:
-            empty_facts = [key for key, value in rule.facts.items() if value is None]
-            if empty_facts and len(empty_facts) == len(rule.facts):
-                raise ValidationError(f"Rule '{rule.id}' cannot have all facts set to None")
-        
         # Tags validation
         if not isinstance(rule.tags, list):
             raise ValidationError(f"Rule '{rule.id}' tags must be a list")

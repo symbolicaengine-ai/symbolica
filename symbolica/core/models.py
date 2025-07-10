@@ -17,8 +17,7 @@ class Rule:
     id: str
     priority: int
     condition: str  # Expression string for AST evaluation
-    actions: Dict[str, Any]  # Simple key-value actions (final outputs)
-    facts: Dict[str, Any] = field(default_factory=dict)  # Intermediate state (shared between rules)
+    actions: Dict[str, Any]  # Simple key-value actions
     tags: List[str] = field(default_factory=list)  # Rule metadata tags
     triggers: List[str] = field(default_factory=list)  # Rules to trigger after this one fires
     
@@ -31,8 +30,6 @@ class Rule:
             raise ValueError("Condition must be a non-empty string")
         if not isinstance(self.actions, dict) or not self.actions:
             raise ValueError("Actions must be a non-empty dictionary")
-        if not isinstance(self.facts, dict):
-            raise ValueError("Facts must be a dictionary")
         if not isinstance(self.tags, list):
             raise ValueError("Tags must be a list")
         if not isinstance(self.triggers, list):
@@ -66,7 +63,6 @@ class ExecutionResult:
     fired_rules: List[str]   # IDs of rules that fired
     execution_time_ms: float # Execution time
     reasoning: str           # Simple explanation for LLMs
-    intermediate_facts: Dict[str, Any] = field(default_factory=dict)  # Facts created during execution
     _context: Optional['ExecutionContext'] = field(default=None, repr=False)  # Store context for rich tracing
     
     @property
@@ -79,7 +75,6 @@ class ExecutionResult:
         return {
             "rules_fired": self.fired_rules,
             "final_facts": self.verdict,
-            "intermediate_facts": self.intermediate_facts,
             "execution_time_ms": self.execution_time_ms,
             "reasoning": self.reasoning
         }
@@ -149,28 +144,6 @@ class ExecutionResult:
         return critical_conditions
 
 
-@dataclass(frozen=True)
-class Goal:
-    """Goal for backward chaining - what we want to achieve."""
-    target_facts: Dict[str, Any]
-    
-    def __post_init__(self):
-        if not isinstance(self.target_facts, dict):
-            raise ValueError("Target facts must be a dictionary")
-        if not self.target_facts:
-            raise ValueError("Target facts cannot be empty")
-
-
-def facts(**kwargs) -> Facts:
-    """Factory function for creating Facts."""
-    return Facts(kwargs)
-
-
-def goal(**kwargs) -> Goal:
-    """Factory function for creating Goals."""
-    return Goal(kwargs)
-
-
 @dataclass
 class ExecutionContext:
     """Mutable execution context during rule processing."""
@@ -179,7 +152,6 @@ class ExecutionContext:
     fired_rules: List[str]
     reasoning_steps: List[str] = field(default_factory=list)
     _verdict: Dict[str, Any] = field(default_factory=dict)  # Track changes incrementally
-    _intermediate_facts: Dict[str, Any] = field(default_factory=dict)  # Track facts created by rules
     start_time: float = field(default_factory=time.perf_counter)
     _rule_traces: Dict[str, Any] = field(default_factory=dict)  # Store hierarchical traces per rule
     
@@ -194,11 +166,6 @@ class ExecutionContext:
         # Track as changed if it's new or different from original
         if key not in self.original_facts.data or self.original_facts.data[key] != value:
             self._verdict[key] = value
-    
-    def set_intermediate_fact(self, key: str, value: Any) -> None:
-        """Set an intermediate fact that other rules can use (but not in final verdict)."""
-        self.enriched_facts[key] = value
-        self._intermediate_facts[key] = value
     
     def get_fact(self, key: str, default: Any = None) -> Any:
         """Get a fact from the context."""
@@ -235,12 +202,10 @@ class ExecutionContext:
             'fired_rules': self.fired_rules,
             'rule_traces': traces_for_llm,
             'facts_added': self._verdict,
-            'intermediate_facts': self._intermediate_facts,
             'execution_summary': {
                 'rules_evaluated': len(self._rule_traces),
                 'rules_fired': len(self.fired_rules),
                 'facts_modified': len(self._verdict),
-                'intermediate_facts_created': len(self._intermediate_facts),
                 'total_execution_time_ms': (time.perf_counter() - self.start_time) * 1000
             },
             'reasoning_chain': self._build_reasoning_chain()
@@ -282,13 +247,31 @@ class ExecutionContext:
         return self._verdict.copy()
     
     @property
-    def intermediate_facts(self) -> Dict[str, Any]:
-        """Get intermediate facts created during execution."""
-        return self._intermediate_facts.copy()
-    
-    @property
     def reasoning(self) -> str:
         """Get simple reasoning explanation."""
         if not self.reasoning_steps:
             return "No rules fired"
-        return "\n".join(self.reasoning_steps) 
+        return "\n".join(self.reasoning_steps)
+
+
+@dataclass(frozen=True)
+class Goal:
+    """Simple goal data container - field-value pairs we want to achieve."""
+    target: Dict[str, Any]
+    
+    def __post_init__(self):
+        if not isinstance(self.target, dict) or not self.target:
+            raise ValueError("Goal target must be a non-empty dictionary")
+
+
+
+
+
+# Simple factory functions
+def facts(**data: Any) -> Facts:
+    """Create Facts from keyword arguments."""
+    return Facts(data)
+
+def goal(**target: Any) -> Goal:
+    """Create Goal from keyword arguments."""
+    return Goal(target) 
