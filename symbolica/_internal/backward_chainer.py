@@ -51,7 +51,8 @@ class BackwardChainer:
             try:
                 if self.evaluator.evaluate(rule.condition, temp_context):
                     return True
-            except:
+            except (AttributeError, TypeError, ValueError, SyntaxError):
+                # Rule evaluation failed - skip this rule
                 continue
         
         return False 

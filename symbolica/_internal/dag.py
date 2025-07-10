@@ -41,13 +41,33 @@ class DAGStrategy(ExecutionStrategy):
         """Build dependency graph from rules including field dependencies and rule chaining."""
         graph = defaultdict(set)
         
-        # Create mapping from rule ID to rule
+        # Create mapping from rule ID to rule and collect what facts each rule produces
         rule_map = {rule.id: rule for rule in rules}
+        rule_produces = {}  # rule_id -> set of fact names it produces
+        rule_consumes = {}  # rule_id -> set of fact names it consumes
         
+        # Analyze what each rule produces and consumes
         for rule in rules:
-            # Skip field-based dependencies for now to avoid circular dependencies
-            # The explicit trigger relationships will handle proper ordering
-            pass
+            # Facts this rule produces (from actions)
+            produces = set(rule.actions.keys()) if rule.actions else set()
+            rule_produces[rule.id] = produces
+            
+            # Facts this rule consumes (from condition fields)
+            try:
+                consumes = self._get_rule_dependencies(rule)
+                rule_consumes[rule.id] = consumes
+            except (AttributeError, TypeError, ValueError) as e:
+                # If field extraction fails, assume no dependencies
+                rule_consumes[rule.id] = set()
+        
+        # Build field-based dependencies: if rule A produces fact X and rule B consumes fact X,
+        # then rule B depends on rule A
+        for consumer_id, consumed_facts in rule_consumes.items():
+            for producer_id, produced_facts in rule_produces.items():
+                if consumer_id != producer_id:  # Don't create self-dependencies
+                    # If consumer needs any fact that producer creates
+                    if consumed_facts & produced_facts:
+                        graph[consumer_id].add(producer_id)
         
         # Add explicit rule chaining dependencies
         for rule in rules:
@@ -68,7 +88,8 @@ class DAGStrategy(ExecutionStrategy):
                 fields = self.evaluator.extract_fields(rule.condition)
                 self._dependency_cache[rule.id] = fields
                 return fields
-        except:
+        except (AttributeError, TypeError, ValueError, SyntaxError):
+            # Field extraction failed - fall back to empty set
             pass
         
         # Fallback to empty set if no evaluator or extraction fails
@@ -85,10 +106,11 @@ class DAGStrategy(ExecutionStrategy):
             for dependency in graph[rule_id]:
                 in_degree[rule_id] += 1
         
-        # Sort by priority within each level
+        # Sort by priority within each level (higher priority first)
         queue = deque(sorted(
             [rule for rule in rules if in_degree[rule.id] == 0],
-            key=lambda r: r.priority
+            key=lambda r: r.priority,
+            reverse=True
         ))
         
         result = []
@@ -106,15 +128,15 @@ class DAGStrategy(ExecutionStrategy):
                     if in_degree[rule_id] == 0:
                         rules_to_update.append(rule_map[rule_id])
             
-            # Add newly available rules to queue, sorted by priority
-            for rule in sorted(rules_to_update, key=lambda r: r.priority):
+            # Add newly available rules to queue, sorted by priority (higher priority first)
+            for rule in sorted(rules_to_update, key=lambda r: r.priority, reverse=True):
                 queue.append(rule)
         
         # Check for cycles
         if len(result) != len(rules):
-            # Fall back to priority-based sorting
+            # Fall back to priority-based sorting (higher priority first)
             remaining = [rule for rule in rules if rule not in result]
-            result.extend(sorted(remaining, key=lambda r: r.priority))
+            result.extend(sorted(remaining, key=lambda r: r.priority, reverse=True))
         
         return result
     

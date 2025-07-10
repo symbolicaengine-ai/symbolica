@@ -30,12 +30,14 @@ class Engine:
     
     def __init__(self, 
                  rules: Optional[List[Rule]] = None,
-                 temporal_config: Optional[Dict[str, Any]] = None):
+                 temporal_config: Optional[Dict[str, Any]] = None,
+                 execution_config: Optional[Dict[str, Any]] = None):
         """Initialize engine with rules and optional configuration.
         
         Args:
             rules: Optional list of rules to initialize with
             temporal_config: Optional temporal service configuration
+            execution_config: Optional execution configuration (max_iterations, etc.)
         """
         # Initialize core components
         self._rules = rules or []
@@ -50,6 +52,10 @@ class Engine:
             max_points_per_key=temporal_config.get('max_points_per_key', 1000),
             cleanup_interval=temporal_config.get('cleanup_interval', 300)
         )
+        
+        # Initialize execution configuration
+        execution_config = execution_config or {}
+        self._max_iterations = execution_config.get('max_iterations', 10)
         
         # Initialize execution components
         self._evaluator = ASTEvaluator()
@@ -143,7 +149,7 @@ class Engine:
         """Force cleanup of old temporal data."""
         return self._temporal_service.cleanup_old_data()
     
-    # Core Execution Logic (simplified and focused)
+    # Core Execution Logic (simplified and focused)  
     def reason(self, input_facts: Union[Facts, Dict[str, Any]]) -> ExecutionResult:
         """Execute rules against facts and return result with explanation."""
         start_time = time.perf_counter()
@@ -159,17 +165,8 @@ class Engine:
             fired_rules=[]
         )
         
-        # Execute rules in dependency-aware order
-        try:
-            execution_order = self._dag_strategy.get_execution_order(self._rules)
-        except Exception as e:
-            # Fallback to priority-based sorting if DAG fails
-            execution_order = sorted(self._rules, key=lambda r: r.priority, reverse=True)
-        
-        # Execute rules
-        for rule in execution_order:
-            triggered_by = self._find_triggering_rule(rule, context.fired_rules)
-            self._execute_rule(rule, context, triggered_by)
+        # Execute rules iteratively until convergence
+        self._execute_rules_iteratively(context)
         
         # Build result
         execution_time_ms = (time.perf_counter() - start_time) * 1000
@@ -180,8 +177,56 @@ class Engine:
             reasoning=context.reasoning
         )
     
-    def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> None:
-        """Execute a single rule with proper error handling."""
+    def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
+        """Execute rules iteratively until no new rules fire (convergence)."""
+        
+        for iteration in range(self._max_iterations):
+            rules_fired_this_iteration = 0
+            
+            # Get rules that haven't fired yet
+            remaining_rules = [rule for rule in self._rules if rule.id not in context.fired_rules]
+            if not remaining_rules:
+                break
+            
+            # Get execution order (dependency-aware with priority fallback)
+            execution_order = self._get_execution_order(remaining_rules)
+            
+            # Execute rules that can fire
+            for rule in execution_order:
+                if self._can_rule_fire(rule, context):
+                    triggered_by = self._find_triggering_rule(rule, context.fired_rules)
+                    if self._execute_rule(rule, context, triggered_by):
+                        rules_fired_this_iteration += 1
+            
+            # If no rules fired this iteration, we've reached convergence
+            if rules_fired_this_iteration == 0:
+                break
+    
+    def _get_execution_order(self, rules: List[Rule]) -> List[Rule]:
+        """Get rule execution order with DAG strategy and priority fallback."""
+        try:
+            return self._dag_strategy.get_execution_order(rules)
+        except Exception:
+            # Fallback to priority-based sorting if DAG fails
+            return sorted(rules, key=lambda r: r.priority, reverse=True)
+    
+    def _can_rule_fire(self, rule: Rule, context: ExecutionContext) -> bool:
+        """Check if a rule's condition is satisfied and it hasn't fired yet."""
+        if rule.id in context.fired_rules:
+            return False
+            
+        try:
+            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+            return trace.result
+        except Exception:
+            return False
+    
+    def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> bool:
+        """Execute a single rule with proper error handling.
+        
+        Returns:
+            True if the rule fired, False otherwise
+        """
         try:
             # Evaluate with trace to get detailed explanation
             trace = self._evaluator.evaluate_with_trace(rule.condition, context)
@@ -197,10 +242,17 @@ class Engine:
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
                 
+                return True
+                
+        except (AttributeError, TypeError, ValueError, SyntaxError) as e:
+            # Rule execution failed - continue with other rules but record failure
+            # In a production system, this should use proper logging
+            context.rule_fired(rule.id, f"Rule execution failed: {str(e)}", triggered_by)
         except Exception as e:
-            # Log error but don't crash execution
-            # In production, you might want to use proper logging here
-            pass
+            # Unexpected error - continue execution but log the issue
+            context.rule_fired(rule.id, f"Unexpected error in rule: {str(e)}", triggered_by)
+        
+        return False
     
     def _find_triggering_rule(self, rule: Rule, fired_rules: List[str]) -> Optional[str]:
         """Find which rule triggered this rule, if any."""
