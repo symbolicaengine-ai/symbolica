@@ -8,6 +8,7 @@ Refactored to use focused components following Single Responsibility Principle.
 
 import time
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
@@ -89,6 +90,84 @@ class Engine:
         # Connect function registry to evaluator
         for name, func in self._function_registry._functions.items():
             self._evaluator.register_function(name, func)
+    
+    def _is_expression(self, value: Any) -> bool:
+        """Detect if a value should be treated as an expression to evaluate.
+        
+        Args:
+            value: Value to check
+            
+        Returns:
+            True if value appears to be an expression, False otherwise
+        """
+        if not isinstance(value, str):
+            return False
+        
+        # Skip empty strings
+        if not value.strip():
+            return False
+        
+        # Check for arithmetic operators
+        arithmetic_ops = ['+', '-', '*', '/', '//', '%', '**']
+        has_arithmetic = any(op in value for op in arithmetic_ops)
+        
+        # Check for parentheses (likely mathematical expression)
+        has_parentheses = '(' in value and ')' in value
+        
+        # Check for function calls (word followed by parentheses)
+        has_function_call = re.search(r'\w+\s*\(', value)
+        
+        # Check for comparison operators (field access patterns)
+        comparison_ops = ['==', '!=', '<', '>', '<=', '>=']
+        has_comparisons = any(op in value for op in comparison_ops)
+        
+        # Check for variable patterns (words that aren't obvious strings)
+        # This is a heuristic - variables typically don't have spaces unless in quotes
+        words = re.findall(r'\w+', value)
+        has_variables = len(words) > 0 and not value.startswith('"') and not value.startswith("'")
+        
+        # If it has arithmetic, parentheses, function calls, or looks like a calculation, treat as expression
+        is_likely_expression = (
+            has_arithmetic or 
+            has_parentheses or 
+            has_function_call or
+            (has_variables and not ' ' in value.strip()) or  # Single words or connected with operators
+            has_comparisons
+        )
+        
+        # Additional checks to avoid false positives
+        # Skip if it's clearly a sentence (multiple words with spaces and no operators)
+        if ' ' in value and not any(op in value for op in arithmetic_ops + comparison_ops) and not has_parentheses:
+            return False
+        
+        # Skip if it looks like a URL, file path, or other string literal
+        if any(pattern in value.lower() for pattern in ['http://', 'https://', '\\', '/', '.com', '.org']):
+            return False
+        
+        return is_likely_expression
+    
+    def _evaluate_action_value(self, value: Any, context: ExecutionContext) -> Any:
+        """Evaluate an action value, computing expressions as numbers.
+        
+        Args:
+            value: Raw action value from rule
+            context: Current execution context
+            
+        Returns:
+            Evaluated value (computed if expression, original if literal)
+        """
+        # Only attempt evaluation for potential expressions
+        if not self._is_expression(value):
+            return value
+        
+        try:
+            # Use the same evaluator as conditions
+            result, _ = self._evaluator._core.evaluate(str(value), context)
+            return result
+        except Exception:
+            # If evaluation fails, return original value
+            # This ensures backward compatibility
+            return value
     
     # Rule Loading Methods (delegated to RuleLoader)
     @classmethod
@@ -273,12 +352,16 @@ class Engine:
                 detailed_reason = trace.explain()
             
             if trace_result:
-                # Apply actions
+                # Apply actions with expression evaluation
+                evaluated_actions = {}
                 for key, value in rule.actions.items():
-                    context.set_fact(key, value)
+                    # Evaluate expressions, keep literals as-is
+                    evaluated_value = self._evaluate_action_value(value, context)
+                    context.set_fact(key, evaluated_value)
+                    evaluated_actions[key] = evaluated_value
                 
                 # Record detailed reasoning using trace
-                actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
+                actions_str = ", ".join([f"{k}={v}" for k, v in evaluated_actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
                 
