@@ -9,6 +9,10 @@ from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts,
 from .engine import Engine
 from .exceptions import SymbolicaError, ValidationError, EvaluationError
 from .interfaces import ConditionEvaluator, ExecutionStrategy
+from .loader import RuleLoader, ConditionParser
+from .function_registry import FunctionRegistry
+from .validation_service import ValidationService
+from .temporal_service import TemporalService
 
 __all__ = [
     # Core models
@@ -16,6 +20,9 @@ __all__ = [
     
     # Engine
     'Engine',
+    
+    # Services
+    'RuleLoader', 'ConditionParser', 'FunctionRegistry', 'ValidationService', 'TemporalService',
     
     # Exceptions
     'SymbolicaError', 'ValidationError', 'EvaluationError',

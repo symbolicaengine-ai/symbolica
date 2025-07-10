@@ -199,8 +199,11 @@ class ASTEvaluator(ConditionEvaluator):
                     try:
                         result = self._custom_functions[func_name](*args)
                         return result, field_values
-                    except Exception as e:
+                    except (TypeError, ValueError, ZeroDivisionError) as e:
                         raise EvaluationError(f"Error in custom function {func_name}: {e}")
+                    except Exception as e:
+                        # Log unexpected errors but don't crash
+                        raise EvaluationError(f"Unexpected error in custom function {func_name}: {e}")
                 
                 else:
                     raise EvaluationError(f"Unknown function: {func_name}")
@@ -286,10 +289,14 @@ class ASTEvaluator(ConditionEvaluator):
             
             FieldCollector().visit(tree)
             return fields
-        except:
+        except (SyntaxError, ValueError) as e:
+            # Fallback to regex if AST parsing fails
             matches = FIELD_PATTERN.findall(condition_expr)
             all_reserved = RESERVED_WORDS | set(self._custom_functions.keys())
             return {match for match in matches if match not in all_reserved}
+        except Exception as e:
+            # Handle unexpected errors
+            raise EvaluationError(f"Error extracting fields from condition: {e}")
 
 
  
