@@ -99,19 +99,18 @@ class ValidationService:
         Raises:
             ValidationError: If duplicate IDs are found
         """
-        rule_ids = [rule.id for rule in rules]
-        unique_ids = set(rule_ids)
+        # O(n) duplicate detection - single pass with set tracking
+        seen = set()
+        duplicates = []
         
-        if len(rule_ids) != len(unique_ids):
-            # Find duplicates
-            seen = set()
-            duplicates = set()
-            for rule_id in rule_ids:
-                if rule_id in seen:
-                    duplicates.add(rule_id)
-                seen.add(rule_id)
-            
-            raise ValidationError(f"Duplicate rule IDs found: {list(duplicates)}")
+        for rule in rules:
+            if rule.id in seen:
+                duplicates.append(rule.id)
+            else:
+                seen.add(rule.id)
+        
+        if duplicates:
+            raise ValidationError(f"Duplicate rule IDs found: {duplicates}")
     
     def _validate_rule_chaining(self, rules: List[Rule]) -> None:
         """Validate rule chaining to prevent circular dependencies and ensure targets exist.
@@ -139,7 +138,7 @@ class ValidationService:
         self._check_circular_dependencies(rules)
     
     def _check_circular_dependencies(self, rules: List[Rule]) -> None:
-        """Check for circular dependencies in rule chaining.
+        """Check for circular dependencies in rule chaining using O(n) algorithm.
         
         Args:
             rules: List of rules to check
@@ -147,33 +146,36 @@ class ValidationService:
         Raises:
             ValidationError: If circular dependencies are found
         """
-        # Build adjacency list for easier traversal
+        # Build adjacency list
         graph: Dict[str, List[str]] = {}
         for rule in rules:
             graph[rule.id] = rule.triggers.copy()
         
-        def has_cycle(start_rule_id: str, visited: Set[str], path: Set[str]) -> bool:
-            """DFS to detect cycles."""
-            if start_rule_id in path:
+        # Three-color DFS for cycle detection: O(V + E) = O(n)
+        # WHITE = 0 (unvisited), GRAY = 1 (visiting), BLACK = 2 (visited)
+        color = {rule.id: 0 for rule in rules}
+        
+        def dfs(node_id: str) -> bool:
+            """DFS with three-color marking for cycle detection."""
+            if color[node_id] == 1:  # GRAY - back edge found, cycle detected
                 return True
-            if start_rule_id in visited:
+            if color[node_id] == 2:  # BLACK - already processed
                 return False
             
-            visited.add(start_rule_id)
-            path.add(start_rule_id)
+            color[node_id] = 1  # Mark as GRAY (visiting)
             
-            # Check all rules that this rule triggers
-            for triggered_id in graph.get(start_rule_id, []):
-                if has_cycle(triggered_id, visited, path):
+            # Visit all neighbors
+            for neighbor in graph.get(node_id, []):
+                if neighbor in color and dfs(neighbor):
                     return True
             
-            path.remove(start_rule_id)
+            color[node_id] = 2  # Mark as BLACK (visited)
             return False
         
-        visited = set()
+        # Check each unvisited node
         for rule in rules:
-            if rule.id not in visited:
-                if has_cycle(rule.id, visited, set()):
+            if color[rule.id] == 0:  # WHITE (unvisited)
+                if dfs(rule.id):
                     raise ValidationError(
                         f"Circular dependency detected in rule chaining involving rule '{rule.id}'"
                     )
@@ -219,11 +221,8 @@ class ValidationService:
             if not rule.triggers and not reverse_graph[rule.id]:
                 isolated_rules.append(rule.id)
         
-        # Calculate max trigger depth
-        max_depth = 0
-        for rule_id in trigger_graph:
-            depth = self._calculate_trigger_depth(rule_id, trigger_graph, set())
-            max_depth = max(max_depth, depth)
+        # Calculate max trigger depth using O(n) topological approach
+        max_depth = self._calculate_max_trigger_depth_optimized(trigger_graph)
         
         return {
             'total_rules': len(rules),
@@ -234,28 +233,42 @@ class ValidationService:
             'isolated_rule_ids': isolated_rules
         }
     
-    def _calculate_trigger_depth(self, rule_id: str, graph: Dict[str, List[str]], visited: Set[str]) -> int:
-        """Calculate maximum trigger depth from a rule.
+    def _calculate_max_trigger_depth_optimized(self, graph: Dict[str, List[str]]) -> int:
+        """Calculate maximum trigger depth using O(n) topological sort approach.
         
         Args:
-            rule_id: Starting rule ID
             graph: Trigger graph
-            visited: Set of visited rules (to prevent infinite loops)
             
         Returns:
             Maximum depth
         """
-        if rule_id in visited:
-            return 0  # Prevent infinite loops
+        if not graph:
+            return 0
         
-        if not graph.get(rule_id):
-            return 0  # No triggers
+        # Calculate in-degrees for topological sort
+        in_degree = {node: 0 for node in graph}
+        for node in graph:
+            for neighbor in graph[node]:
+                if neighbor in in_degree:
+                    in_degree[neighbor] += 1
         
-        visited.add(rule_id)
-        max_depth = 0
+        # Initialize depths and queue with nodes having no incoming edges
+        depths = {node: 0 for node in graph}
+        queue = [node for node in graph if in_degree[node] == 0]
         
-        for triggered_id in graph[rule_id]:
-            depth = 1 + self._calculate_trigger_depth(triggered_id, graph, visited.copy())
-            max_depth = max(max_depth, depth)
+        # Process nodes in topological order
+        while queue:
+            current = queue.pop(0)
+            
+            # Update depths of all neighbors
+            for neighbor in graph[current]:
+                if neighbor in depths:
+                    depths[neighbor] = max(depths[neighbor], depths[current] + 1)
+                    in_degree[neighbor] -= 1
+                    
+                    # Add to queue when all dependencies processed
+                    if in_degree[neighbor] == 0:
+                        queue.append(neighbor)
         
-        return max_depth 
+        # Return maximum depth found
+        return max(depths.values()) if depths else 0 
