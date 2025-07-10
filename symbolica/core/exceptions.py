@@ -165,6 +165,19 @@ class FunctionError(SymbolicaError):
         self.original_error = original_error
 
 
+class SecurityError(EvaluationError):
+    """Raised when expression violates security constraints."""
+    
+    def __init__(self, message: str, expression: Optional[str] = None, 
+                 rule_id: Optional[str] = None, violation_type: Optional[str] = None):
+        context = {}
+        if violation_type:
+            context['violation_type'] = violation_type
+            
+        super().__init__(message, expression=expression, rule_id=rule_id, field_values=context)
+        self.violation_type = violation_type
+
+
 class DAGError(SymbolicaError):
     """Raised when DAG operations fail."""
     
