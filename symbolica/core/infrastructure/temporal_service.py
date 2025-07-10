@@ -8,7 +8,7 @@ Separated from Engine to follow Single Responsibility Principle.
 
 from typing import Dict, Any, Optional
 from .function_registry import FunctionRegistry
-from .._internal.temporal_store import TemporalStore
+from ..._internal.storage.temporal_store import TemporalStore
 
 
 class TemporalService:

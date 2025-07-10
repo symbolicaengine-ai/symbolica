@@ -10,12 +10,12 @@ from typing import Dict, List, Set, Optional, Any, TYPE_CHECKING
 from collections import defaultdict, deque
 import logging
 
-from ..core.interfaces import ExecutionStrategy
-from ..core.exceptions import DAGError, EvaluationError
+from ...core.interfaces import ExecutionStrategy
+from ...core.infrastructure.exceptions import DAGError, EvaluationError
 
 if TYPE_CHECKING:
-    from ..core.models import Rule, ExecutionContext
-    from ..core.interfaces import ConditionEvaluator
+    from ...core.models import Rule, ExecutionContext
+    from ...core.interfaces import ConditionEvaluator
 
 
 class DAGStrategy(ExecutionStrategy):

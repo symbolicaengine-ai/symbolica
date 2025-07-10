@@ -12,17 +12,17 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
-from .exceptions import (
+from .infrastructure.exceptions import (
     ValidationError, ExecutionError, EvaluationError, 
     DAGError, ConfigurationError, ErrorCollector, FunctionError
 )
-from .loader import RuleLoader
-from .function_registry import FunctionRegistry
-from .validation_service import ValidationService
-from .temporal_service import TemporalService
-from .._internal.evaluator import ASTEvaluator
-from .._internal.dag import DAGStrategy
-from .._internal.backward_chainer import BackwardChainer
+from .infrastructure.loader import RuleLoader
+from .infrastructure.function_registry import FunctionRegistry
+from .infrastructure.validation_service import ValidationService
+from .infrastructure.temporal_service import TemporalService
+from .._internal.evaluation.evaluator import ASTEvaluator
+from .._internal.strategies.dag import DAGStrategy
+from .._internal.strategies.backward_chainer import BackwardChainer
 
 
 class Engine:
@@ -70,6 +70,7 @@ class Engine:
         
         # Initialize execution components
         self._evaluator = ASTEvaluator()
+        self._executor = self._evaluator  # Backward compatibility alias
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
         
@@ -179,13 +180,14 @@ class Engine:
         # Execute rules iteratively until convergence
         self._execute_rules_iteratively(context)
         
-        # Build result
+        # Build result with context for hierarchical tracing
         execution_time_ms = (time.perf_counter() - start_time) * 1000
         return ExecutionResult(
             verdict=context.verdict,
             fired_rules=context.fired_rules,
             execution_time_ms=execution_time_ms,
-            reasoning=context.reasoning
+            reasoning=context.reasoning,
+            _context=context  # Store context for rich tracing access
         )
     
     def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
@@ -255,16 +257,27 @@ class Engine:
             True if the rule fired, False otherwise
         """
         try:
-            # Evaluate with trace to get detailed explanation
-            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+            # Evaluate with execution path for detailed analysis
+            if hasattr(self._evaluator, 'evaluate_with_execution_path'):
+                execution_path = self._evaluator.evaluate_with_execution_path(rule.condition, context)
+                # Store the execution path for LLM processing
+                context.store_rule_trace(rule.id, execution_path)
+                
+                # Use execution path results
+                trace_result = execution_path.result
+                detailed_reason = execution_path.explain()
+            else:
+                # Fallback to simple trace
+                trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+                trace_result = trace.result
+                detailed_reason = trace.explain()
             
-            if trace.result:
+            if trace_result:
                 # Apply actions
                 for key, value in rule.actions.items():
                     context.set_fact(key, value)
                 
                 # Record detailed reasoning using trace
-                detailed_reason = trace.explain()
                 actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
@@ -418,12 +431,16 @@ class Engine:
             'total_functions': len(self.list_functions())
         }
         
+        avg_priority = sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0
+        
         analysis = {
             'rule_count': len(self._rules),  # Add rule_count at top level for backward compatibility
+            'rule_ids': [rule.id for rule in self._rules],  # Add rule_ids at top level for backward compatibility
+            'avg_priority': avg_priority,  # Add avg_priority at top level for backward compatibility
             'rule_analysis': {
                 'rule_count': len(self._rules),
                 'rule_ids': [rule.id for rule in self._rules],
-                'avg_priority': sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0,
+                'avg_priority': avg_priority,
                 **dependency_analysis
             },
             'temporal_analysis': temporal_stats,

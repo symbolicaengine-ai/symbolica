@@ -10,7 +10,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Union
 
-from .models import Rule
+from ..models import Rule
 from .exceptions import ValidationError
 
 

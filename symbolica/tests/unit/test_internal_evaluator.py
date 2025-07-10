@@ -9,7 +9,7 @@ import pytest
 from typing import Dict, Any
 
 from symbolica.core import ExecutionContext, facts, EvaluationError
-from symbolica._internal.evaluator import ASTEvaluator
+from symbolica._internal.evaluation.evaluator import ASTEvaluator
 
 
 class TestASTEvaluator:

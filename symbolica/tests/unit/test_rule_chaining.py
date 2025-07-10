@@ -4,7 +4,7 @@ Unit tests for rule chaining and DAG strategy functionality.
 
 import pytest
 from symbolica import Engine, facts
-from symbolica.core.exceptions import ValidationError
+from symbolica.core.infrastructure.exceptions import ValidationError
 
 
 class TestBasicRuleChaining:
