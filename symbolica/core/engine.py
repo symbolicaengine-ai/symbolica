@@ -7,11 +7,15 @@ Refactored to use focused components following Single Responsibility Principle.
 """
 
 import time
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
-from .exceptions import ValidationError
+from .exceptions import (
+    ValidationError, ExecutionError, EvaluationError, 
+    DAGError, ConfigurationError, ErrorCollector, FunctionError
+)
 from .loader import RuleLoader
 from .function_registry import FunctionRegistry
 from .validation_service import ValidationService
@@ -28,6 +32,10 @@ class Engine:
     No longer a God Class - delegates specific responsibilities to specialized services.
     """
     
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.logger = logging.getLogger(f'symbolica.{cls.__name__}')
+    
     def __init__(self, 
                  rules: Optional[List[Rule]] = None,
                  temporal_config: Optional[Dict[str, Any]] = None,
@@ -39,6 +47,9 @@ class Engine:
             temporal_config: Optional temporal service configuration
             execution_config: Optional execution configuration (max_iterations, etc.)
         """
+        # Initialize logger
+        self.logger = logging.getLogger('symbolica.Engine')
+        
         # Initialize core components
         self._rules = rules or []
         self._function_registry = FunctionRegistry()
@@ -206,8 +217,12 @@ class Engine:
         """Get rule execution order with DAG strategy and priority fallback."""
         try:
             return self._dag_strategy.get_execution_order(rules)
-        except Exception:
-            # Fallback to priority-based sorting if DAG fails
+        except Exception as e:
+            # Log the DAG failure and use priority fallback
+            self.logger.warning(
+                f"DAG strategy failed, falling back to priority ordering: {str(e)}",
+                extra={'rule_count': len(rules), 'rule_ids': [r.id for r in rules]}
+            )
             return sorted(rules, key=lambda r: r.priority, reverse=True)
     
     def _can_rule_fire(self, rule: Rule, context: ExecutionContext) -> bool:
@@ -218,7 +233,19 @@ class Engine:
         try:
             trace = self._evaluator.evaluate_with_trace(rule.condition, context)
             return trace.result
-        except Exception:
+        except (EvaluationError, FunctionError) as e:
+            # Log evaluation failures but continue execution
+            self.logger.warning(
+                f"Rule condition evaluation failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
+            return False
+        except Exception as e:
+            # Log unexpected errors but continue execution
+            self.logger.error(
+                f"Unexpected error evaluating rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
             return False
     
     def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> bool:
@@ -244,12 +271,26 @@ class Engine:
                 
                 return True
                 
+        except (EvaluationError, FunctionError) as e:
+            # Rule execution failed - log and record in context
+            self.logger.warning(
+                f"Rule execution failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition, 'triggered_by': triggered_by}
+            )
+            context.rule_fired(rule.id, f"Rule execution failed: {str(e)}", triggered_by)
         except (AttributeError, TypeError, ValueError, SyntaxError) as e:
-            # Rule execution failed - continue with other rules but record failure
-            # In a production system, this should use proper logging
+            # Python evaluation errors - log and record
+            self.logger.warning(
+                f"Python evaluation error in rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
             context.rule_fired(rule.id, f"Rule execution failed: {str(e)}", triggered_by)
         except Exception as e:
-            # Unexpected error - continue execution but log the issue
+            # Unexpected error - log as error and continue
+            self.logger.error(
+                f"Unexpected error in rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition, 'triggered_by': triggered_by}
+            )
             context.rule_fired(rule.id, f"Unexpected error in rule: {str(e)}", triggered_by)
         
         return False
@@ -377,7 +418,8 @@ class Engine:
             'total_functions': len(self.list_functions())
         }
         
-        return {
+        analysis = {
+            'rule_count': len(self._rules),  # Add rule_count at top level for backward compatibility
             'rule_analysis': {
                 'rule_count': len(self._rules),
                 'rule_ids': [rule.id for rule in self._rules],
@@ -387,6 +429,7 @@ class Engine:
             'temporal_analysis': temporal_stats,
             'function_analysis': function_stats
         }
+        return analysis
     
     @property
     def rules(self) -> List[Rule]:

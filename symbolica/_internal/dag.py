@@ -8,8 +8,10 @@ Optimized for large rule sets with complex dependencies.
 
 from typing import Dict, List, Set, Optional, Any, TYPE_CHECKING
 from collections import defaultdict, deque
+import logging
 
 from ..core.interfaces import ExecutionStrategy
+from ..core.exceptions import DAGError, EvaluationError
 
 if TYPE_CHECKING:
     from ..core.models import Rule, ExecutionContext
@@ -28,6 +30,7 @@ class DAGStrategy(ExecutionStrategy):
     def __init__(self, evaluator: Optional['ConditionEvaluator'] = None):
         self.evaluator = evaluator
         self._dependency_cache: Dict[str, Set[str]] = {}
+        self.logger = logging.getLogger('symbolica.DAGStrategy')
     
     def get_execution_order(self, rules: List['Rule']) -> List['Rule']:
         """Get rules in dependency-aware execution order."""
@@ -56,8 +59,12 @@ class DAGStrategy(ExecutionStrategy):
             try:
                 consumes = self._get_rule_dependencies(rule)
                 rule_consumes[rule.id] = consumes
-            except (AttributeError, TypeError, ValueError) as e:
-                # If field extraction fails, assume no dependencies
+            except (AttributeError, TypeError, ValueError, EvaluationError) as e:
+                # Log field extraction failure and assume no dependencies
+                self.logger.warning(
+                    f"Failed to extract dependencies for rule '{rule.id}': {str(e)}",
+                    extra={'rule_id': rule.id, 'condition': rule.condition}
+                )
                 rule_consumes[rule.id] = set()
         
         # Build field-based dependencies: if rule A produces fact X and rule B consumes fact X,
@@ -88,9 +95,12 @@ class DAGStrategy(ExecutionStrategy):
                 fields = self.evaluator.extract_fields(rule.condition)
                 self._dependency_cache[rule.id] = fields
                 return fields
-        except (AttributeError, TypeError, ValueError, SyntaxError):
-            # Field extraction failed - fall back to empty set
-            pass
+        except (AttributeError, TypeError, ValueError, SyntaxError, EvaluationError) as e:
+            # Log field extraction failure and fall back to empty set
+            self.logger.debug(
+                f"Field extraction failed for rule '{rule.id}': {str(e)}",
+                extra={'rule_id': rule.id, 'condition': rule.condition}
+            )
         
         # Fallback to empty set if no evaluator or extraction fails
         self._dependency_cache[rule.id] = set()
@@ -134,8 +144,16 @@ class DAGStrategy(ExecutionStrategy):
         
         # Check for cycles
         if len(result) != len(rules):
-            # Fall back to priority-based sorting (higher priority first)
             remaining = [rule for rule in rules if rule not in result]
+            remaining_ids = [rule.id for rule in remaining]
+            
+            # Log the cycle detection
+            self.logger.warning(
+                f"Circular dependencies detected in rules: {remaining_ids}. Using priority fallback.",
+                extra={'cycle_rules': remaining_ids, 'completed_rules': len(result)}
+            )
+            
+            # Fall back to priority-based sorting (higher priority first)
             result.extend(sorted(remaining, key=lambda r: r.priority, reverse=True))
         
         return result

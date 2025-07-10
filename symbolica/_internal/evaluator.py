@@ -12,7 +12,7 @@ from functools import lru_cache
 from dataclasses import dataclass
 
 from ..core.interfaces import ConditionEvaluator
-from ..core.exceptions import EvaluationError
+from ..core.exceptions import EvaluationError, FunctionError, ValidationError
 
 if TYPE_CHECKING:
     from ..core.models import ExecutionContext
@@ -90,11 +90,11 @@ class ASTEvaluator(ConditionEvaluator):
     def register_function(self, name: str, func: Callable) -> None:
         """Register a custom function."""
         if not callable(func):
-            raise ValueError(f"Function {name} must be callable")
+            raise FunctionError(f"Function must be callable", function_name=name)
         if not name.isidentifier():
-            raise ValueError(f"Function name {name} must be a valid identifier")
+            raise ValidationError(f"Function name must be a valid identifier", value=name)
         if name in RESERVED_WORDS:
-            raise ValueError(f"Function name {name} is reserved")
+            raise ValidationError(f"Function name is reserved", value=name)
         
         self._custom_functions[name] = func
     
@@ -129,8 +129,20 @@ class ASTEvaluator(ConditionEvaluator):
             tree = ast.parse(condition_expr.strip(), mode='eval')
             result, field_values = self._eval_node(tree.body, context)
             return ConditionTrace(condition_expr, bool(result), field_values)
+        except (EvaluationError, FunctionError, ValidationError):
+            # Re-raise our custom exceptions with additional context
+            raise
+        except SyntaxError as e:
+            raise EvaluationError(
+                f"Invalid syntax in condition", 
+                expression=condition_expr,
+                field_values={'syntax_error': str(e)}
+            )
         except Exception as e:
-            raise EvaluationError(f"Evaluation error: {e}")
+            raise EvaluationError(
+                f"Unexpected evaluation error: {str(e)}", 
+                expression=condition_expr
+            )
     
     def _eval_node(self, node, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
         """Evaluate AST node and collect field values."""
@@ -254,9 +266,19 @@ class ASTEvaluator(ConditionEvaluator):
                 result = self._custom_functions[func_name](*args)
                 return result, field_values
             except (TypeError, ValueError, ZeroDivisionError) as e:
-                raise EvaluationError(f"Error in custom function {func_name}: {e}")
+                raise FunctionError(
+                    f"Error in custom function: {str(e)}", 
+                    function_name=func_name,
+                    args=args,
+                    original_error=e
+                )
             except Exception as e:
-                raise EvaluationError(f"Unexpected error in custom function {func_name}: {e}")
+                raise FunctionError(
+                    f"Unexpected error in custom function: {str(e)}", 
+                    function_name=func_name,
+                    args=args,
+                    original_error=e
+                )
         
         else:
             raise EvaluationError(f"Unknown function: {func_name}")
