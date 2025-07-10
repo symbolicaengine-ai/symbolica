@@ -229,7 +229,7 @@ def demo_safety_enforcement():
         
         engine.register_function("unsafe_func", unsafe_function)
         print("✗ Unsafe function should have been rejected")
-    except Exception as e:
+    except ValueError as e:
         print(f"✓ Correctly rejected unsafe function: {e}")
     
     # This should work - full function with explicit allow_unsafe

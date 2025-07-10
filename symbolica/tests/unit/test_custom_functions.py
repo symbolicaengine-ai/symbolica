@@ -37,7 +37,7 @@ class TestCustomFunctionRegistration:
         def unsafe_func(x):
             return x * 2
         
-        with pytest.raises(ValidationError, match="Function 'unsafe_func' is not a lambda"):
+        with pytest.raises(ValueError, match="Function 'unsafe_func' is not a lambda"):
             engine.register_function("unsafe_func", unsafe_func)
     
     def test_register_unsafe_function_with_explicit_flag(self):
@@ -60,15 +60,15 @@ class TestCustomFunctionRegistration:
         engine = Engine()
         
         # Invalid identifier
-        with pytest.raises(ValidationError, match="must be a valid identifier"):
+        with pytest.raises(ValueError, match="must be a valid identifier"):
             engine.register_function("invalid-name", lambda x: x)
         
         # Reserved word
-        with pytest.raises(ValidationError, match="is reserved"):
+        with pytest.raises(ValueError, match="is reserved"):
             engine.register_function("len", lambda x: x)
         
         # Non-callable - test with allow_unsafe to bypass lambda check
-        with pytest.raises(ValidationError, match="must be callable"):
+        with pytest.raises(ValueError, match="must be callable"):
             engine.register_function("not_func", "not a function", allow_unsafe=True)
     
     def test_unregister_function(self):
@@ -270,11 +270,11 @@ class TestCustomFunctionSafety:
         def regular_func(x):
             return x * 2
         
-        with pytest.raises(ValidationError, match="is not a lambda"):
+        with pytest.raises(ValueError, match="is not a lambda"):
             engine.register_function("regular_func", regular_func)
         
         # Built-in function should be rejected
-        with pytest.raises(ValidationError, match="is not a lambda"):
+        with pytest.raises(ValueError, match="is not a lambda"):
             engine.register_function("builtin_func", abs)
     
     def test_lambda_with_complex_expressions(self):
@@ -302,7 +302,7 @@ class TestCustomFunctionSafety:
         
         obj = TestClass()
         
-        with pytest.raises(ValidationError, match="is not a lambda"):
+        with pytest.raises(ValueError, match="is not a lambda"):
             engine.register_function("method_ref", obj.method)
 
 
