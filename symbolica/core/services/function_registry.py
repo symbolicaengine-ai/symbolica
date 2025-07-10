@@ -7,8 +7,8 @@ Separated from Engine to follow Single Responsibility Principle.
 """
 
 from typing import Dict, Callable, Any, List
-from .exceptions import ValidationError
-from .schema_validator import SchemaValidator
+from ..exceptions import ValidationError
+from ..validation.identifier_validator import IdentifierValidator
 
 
 class FunctionRegistry:
@@ -16,12 +16,12 @@ class FunctionRegistry:
     
     def __init__(self):
         self._functions: Dict[str, Callable] = {}
-        self._schema_validator = SchemaValidator()
+        self._identifier_validator = IdentifierValidator()
     
     @property
     def reserved_words(self) -> frozenset:
-        """Get reserved words from the schema validator."""
-        return self._schema_validator.get_reserved_keywords()
+        """Get reserved words from the identifier validator."""
+        return self._identifier_validator.get_reserved_keywords()
     
     def register_function(self, name: str, func: Callable, allow_unsafe: bool = False) -> None:
         """Register a custom function for use in rule conditions.
@@ -53,12 +53,11 @@ class FunctionRegistry:
         if not callable(func):
             raise ValidationError(f"Function '{name}' must be callable")
         
-        # Use schema validator for consistent validation (but allow system functions to bypass)
+        # Use identifier validator for consistent validation (including reserved keywords)
+        self._identifier_validator.validate_identifier(name, f"Function name '{name}'")
+        
+        # Safety checks for user functions
         if not allow_unsafe:
-            # For user functions, enforce all validation including reserved keywords
-            self._schema_validator.validate_identifier(name, f"Function name '{name}'")
-            
-            # Safety checks for user functions
             if not self._is_lambda(func):
                 raise ValidationError(
                     f"Function '{name}' is not a lambda. "
@@ -66,12 +65,32 @@ class FunctionRegistry:
                     f"Use allow_unsafe=True if you trust this function completely. "
                     f"Note: Unsafe functions can hang the engine, consume memory, or have side effects."
                 )
-        else:
-            # For system functions (allow_unsafe=True), only validate basic identifier rules
-            if not isinstance(name, str) or not name.strip():
-                raise ValidationError(f"Function name must be a non-empty string")
-            if not name.isidentifier():
-                raise ValidationError(f"Function name '{name}' must be a valid identifier")
+        
+        # Register the function
+        self._functions[name] = func
+    
+    def register_system_function(self, name: str, func: Callable) -> None:
+        """Register a system function that bypasses reserved keyword validation.
+        
+        This is for internal system functions like temporal functions that are 
+        part of the core system but happen to be in the reserved keywords list.
+        
+        Args:
+            name: Function name to use in conditions
+            func: Callable function
+            
+        Raises:
+            ValidationError: If function name is invalid or function not callable
+        """
+        # Validate function
+        if not callable(func):
+            raise ValidationError(f"System function '{name}' must be callable")
+        
+        # Only validate basic identifier rules (bypass reserved keyword check)
+        if not isinstance(name, str) or not name.strip():
+            raise ValidationError(f"System function name must be a non-empty string")
+        if not name.isidentifier():
+            raise ValidationError(f"System function name '{name}' must be a valid identifier")
         
         # Register the function
         self._functions[name] = func
@@ -119,6 +138,25 @@ class FunctionRegistry:
             List of function names
         """
         return list(self._functions.keys())
+    
+    def list_functions_with_descriptions(self) -> Dict[str, str]:
+        """Get dictionary of function names to descriptions.
+        
+        Returns:
+            Dictionary mapping function names to descriptions
+        """
+        return {
+            name: f'Custom function: {func.__name__ if hasattr(func, "__name__") else "lambda"}'
+            for name, func in self._functions.items()
+        }
+    
+    def function_count(self) -> int:
+        """Get number of registered functions.
+        
+        Returns:
+            Number of registered functions
+        """
+        return len(self._functions)
     
     def clear_functions(self) -> None:
         """Remove all registered functions."""

@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Union
 
 from ..models import Rule
-from .exceptions import ValidationError
-from .schema_validator import SchemaValidator
+from ..exceptions import ValidationError
+from ..validation.schema_validator import SchemaValidator
 
 
 class ConditionParser:
@@ -26,47 +26,41 @@ class ConditionParser:
             if isinstance(node, str):
                 # Base case: string condition
                 return node.strip()
-            
             elif isinstance(node, dict):
-                # Structured condition node
-                if not node:
-                    raise ValidationError("Empty condition dictionary")
+                # Process dictionary node
+                if len(node) != 1:
+                    raise ValidationError("Structured condition must have exactly one key")
                 
-                # Handle multiple keys at same level (combine with AND)
-                subconditions = []
-                for key, value in node.items():
-                    
-                    if key == 'all':
-                        if not isinstance(value, list) or not value:
-                            raise ValidationError("'all' must contain a non-empty list of conditions")
-                        conditions = [f"({_process_condition_node(item)})" for item in value]
-                        subconditions.append(" and ".join(conditions))
-                    
-                    elif key == 'any':
-                        if not isinstance(value, list) or not value:
-                            raise ValidationError("'any' must contain a non-empty list of conditions")
-                        conditions = [f"({_process_condition_node(item)})" for item in value]
-                        subconditions.append(f"({' or '.join(conditions)})")
-                    
-                    elif key == 'not':
-                        if value is None or value == "":
-                            raise ValidationError("'not' must contain a valid condition")
-                        subconditions.append(f"not ({_process_condition_node(value)})")
-                    
-                    else:
-                        raise ValidationError(f"Unknown structured condition key: '{key}'. Valid keys are: all, any, not")
+                key, value = next(iter(node.items()))
                 
-                # Combine all subconditions with AND
-                if len(subconditions) == 1:
-                    return subconditions[0]
+                if key == 'all':
+                    # AND operation
+                    if not isinstance(value, list):
+                        raise ValidationError("'all' condition must have a list value")
+                    if not value:
+                        raise ValidationError("'all' condition cannot be empty")
+                    
+                    sub_conditions = [_process_condition_node(sub) for sub in value]
+                    return f"({' and '.join(sub_conditions)})"
+                
+                elif key == 'any':
+                    # OR operation
+                    if not isinstance(value, list):
+                        raise ValidationError("'any' condition must have a list value")
+                    if not value:
+                        raise ValidationError("'any' condition cannot be empty")
+                    
+                    sub_conditions = [_process_condition_node(sub) for sub in value]
+                    return f"({' or '.join(sub_conditions)})"
+                
+                elif key == 'not':
+                    # NOT operation
+                    return f"not ({_process_condition_node(value)})"
+                
                 else:
-                    return " and ".join([f"({cond})" for cond in subconditions])
-            
-            elif isinstance(node, list):
-                raise ValidationError("Lists must be contained within 'all' or 'any' structures")
-            
+                    raise ValidationError(f"Unknown condition keyword: '{key}'")
             else:
-                raise ValidationError(f"Invalid condition node type: {type(node)}. Must be string or dict")
+                raise ValidationError("Condition node must be a string or dictionary")
         
         return _process_condition_node(condition_dict)
 
@@ -220,29 +214,23 @@ class RuleLoader:
         if not isinstance(enabled, bool):
             raise ValidationError("'enabled' field must be a boolean")
         
-        # Skip disabled rules
-        if not enabled:
-            # Create a disabled rule marker (could be filtered out later)
-            pass
+        # If rule is disabled, we still parse it but could mark it somehow
+        # For now, we'll include disabled rules but the engine can check the enabled field
         
-        # Create rule with validation
-        rule = Rule(
-            id=str(rule_dict['id']),
-            priority=int(rule_dict.get('priority', 0)),
-            condition=condition.strip(),
-            actions=actions,
+        return Rule(
+            id=rule_dict['id'],
+            priority=rule_dict.get('priority', 100),
+            condition=condition,
             facts=facts,
-            tags=list(rule_dict.get('tags', [])),
-            triggers=list(rule_dict.get('triggers', []))
+            actions=actions,
+            triggers=rule_dict.get('triggers', []),
+            tags=rule_dict.get('tags', []),
+            description=rule_dict.get('description', ''),
+            enabled=enabled
         )
-        
-        return rule
     
     def _legacy_validation(self, data: Dict[str, Any]) -> None:
         """Legacy validation for when strict validation is disabled."""
-        if not isinstance(data, dict):
-            raise ValidationError("YAML must contain a dictionary")
-        
         if 'rules' not in data:
             raise ValidationError("YAML must contain 'rules' key")
         
@@ -250,4 +238,28 @@ class RuleLoader:
             raise ValidationError("'rules' must be a list")
         
         if not data['rules']:
-            raise ValidationError("Rules list cannot be empty") 
+            raise ValidationError("Rules list cannot be empty")
+        
+        for i, rule in enumerate(data['rules']):
+            if not isinstance(rule, dict):
+                raise ValidationError(f"Rule {i} must be a dictionary")
+            
+            required_fields = ['id', 'condition', 'actions']
+            for field in required_fields:
+                if field not in rule and not (field == 'condition' and 'if' in rule) and not (field == 'actions' and 'then' in rule):
+                    raise ValidationError(f"Rule {i} missing required field: {field}")
+    
+    def is_valid_yaml(self, yaml_content: str) -> bool:
+        """Check if YAML content is valid without raising exceptions.
+        
+        Args:
+            yaml_content: YAML content to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        try:
+            self.validate_yaml_schema(yaml_content)
+            return True
+        except Exception:
+            return False 

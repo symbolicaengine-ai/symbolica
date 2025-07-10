@@ -9,7 +9,7 @@ Extracted from evaluator.py to follow Single Responsibility Principle.
 
 import ast
 from typing import Any, Dict, Tuple, Callable, TYPE_CHECKING
-from ...core.infrastructure.exceptions import EvaluationError, FunctionError
+from ...core.exceptions import EvaluationError, FunctionError
 from .builtin_functions import get_builtin_functions
 
 if TYPE_CHECKING:

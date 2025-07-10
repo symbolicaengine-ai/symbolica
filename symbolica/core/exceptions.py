@@ -66,13 +66,16 @@ class ValidationError(SymbolicaError):
         self.value = value
     
     def __str__(self) -> str:
-        parts = ["Validation error"]
+        parts = []
         if self.rule_id:
             parts.append(f"in rule '{self.rule_id}'")
         if self.field:
             parts.append(f"for field '{self.field}'")
-        parts.append(f": {self.message}")
-        return " ".join(parts)
+        
+        if parts:
+            return f"{' '.join(parts)}: {self.message}"
+        else:
+            return self.message
 
 
 class ExecutionError(SymbolicaError):

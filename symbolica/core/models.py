@@ -21,6 +21,8 @@ class Rule:
     facts: Dict[str, Any] = field(default_factory=dict)  # Intermediate state (shared between rules)
     tags: List[str] = field(default_factory=list)  # Rule metadata tags
     triggers: List[str] = field(default_factory=list)  # Rules to trigger after this one fires
+    description: str = ""  # Optional description for documentation
+    enabled: bool = True  # Whether rule is enabled
     
     def __post_init__(self):
         if not self.id or not isinstance(self.id, str):
@@ -37,6 +39,10 @@ class Rule:
             raise ValueError("Tags must be a list")
         if not isinstance(self.triggers, list):
             raise ValueError("Triggers must be a list")
+        if not isinstance(self.description, str):
+            raise ValueError("Description must be a string")
+        if not isinstance(self.enabled, bool):
+            raise ValueError("Enabled must be a boolean")
 
 
 @dataclass(frozen=True)
