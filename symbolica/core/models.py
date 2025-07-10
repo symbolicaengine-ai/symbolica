@@ -63,6 +63,7 @@ class ExecutionResult:
     fired_rules: List[str]   # IDs of rules that fired
     execution_time_ms: float # Execution time
     reasoning: str           # Simple explanation for LLMs
+    _context: Optional['ExecutionContext'] = field(default=None, repr=False)  # Store context for rich tracing
     
     @property
     def success(self) -> bool:
@@ -78,10 +79,69 @@ class ExecutionResult:
             "reasoning": self.reasoning
         }
     
+    def get_hierarchical_reasoning(self) -> Dict[str, Any]:
+        """Get rich hierarchical reasoning context for advanced LLM processing."""
+        if self._context and hasattr(self._context, 'get_llm_reasoning_context'):
+            return self._context.get_llm_reasoning_context()
+        else:
+            # Fallback to simple context
+            return self.get_llm_context()
+    
     def get_reasoning_json(self) -> str:
         """Get JSON string for LLM prompt inclusion."""
         import json
         return json.dumps(self.get_llm_context(), indent=2)
+    
+    def get_hierarchical_reasoning_json(self) -> str:
+        """Get hierarchical reasoning as JSON for advanced LLM processing."""
+        import json
+        return json.dumps(self.get_hierarchical_reasoning(), indent=2)
+    
+    def explain_decision_path(self) -> str:
+        """Generate a human-readable explanation of the decision path."""
+        if not self._context:
+            return self.reasoning
+        
+        llm_context = self.get_hierarchical_reasoning()
+        reasoning_chain = llm_context.get('reasoning_chain', [])
+        
+        if not reasoning_chain:
+            return self.reasoning
+        
+        explanation_parts = ["Decision path:"]
+        
+        for i, step in enumerate(reasoning_chain, 1):
+            rule_id = step.get('rule_id', 'unknown')
+            condition = step.get('condition', 'unknown condition')
+            explanation = step.get('explanation', 'No explanation')
+            time_ms = step.get('execution_time_ms', 0)
+            
+            explanation_parts.append(f"{i}. Rule '{rule_id}': {explanation}")
+            if time_ms > 0:
+                explanation_parts.append(f"   (evaluated in {time_ms:.2f}ms)")
+        
+        return "\n".join(explanation_parts)
+    
+    def get_critical_conditions(self) -> List[Dict[str, Any]]:
+        """Get the critical conditions that led to the decision."""
+        if not self._context:
+            return []
+        
+        llm_context = self.get_hierarchical_reasoning()
+        reasoning_chain = llm_context.get('reasoning_chain', [])
+        
+        critical_conditions = []
+        for step in reasoning_chain:
+            key_factors = step.get('key_factors', [])
+            if key_factors:
+                critical_conditions.append({
+                    'rule_id': step.get('rule_id'),
+                    'condition': step.get('condition'),
+                    'key_factors': key_factors,
+                    'result': step.get('result')
+                })
+        
+        return critical_conditions
 
 
 @dataclass
@@ -93,6 +153,7 @@ class ExecutionContext:
     reasoning_steps: List[str] = field(default_factory=list)
     _verdict: Dict[str, Any] = field(default_factory=dict)  # Track changes incrementally
     start_time: float = field(default_factory=time.perf_counter)
+    _rule_traces: Dict[str, Any] = field(default_factory=dict)  # Store hierarchical traces per rule
     
     def __post_init__(self):
         # Initialize enriched facts from original
@@ -117,6 +178,68 @@ class ExecutionContext:
             self.reasoning_steps.append(f"✓ {rule_id}: {reason} (triggered by {triggered_by})")
         else:
             self.reasoning_steps.append(f"✓ {rule_id}: {reason}")
+    
+    def store_rule_trace(self, rule_id: str, execution_path: Any) -> None:
+        """Store execution path for a rule."""
+        self._rule_traces[rule_id] = execution_path
+    
+    def get_rule_trace(self, rule_id: str) -> Optional[Any]:
+        """Get execution path for a rule."""
+        return self._rule_traces.get(rule_id)
+    
+    def get_all_traces(self) -> Dict[str, Any]:
+        """Get all stored execution paths."""
+        return self._rule_traces.copy()
+    
+    def get_llm_reasoning_context(self) -> Dict[str, Any]:
+        """Get rich reasoning context optimized for LLM processing."""
+        traces_for_llm = {}
+        for rule_id, execution_path in self._rule_traces.items():
+            if hasattr(execution_path, 'get_llm_context'):
+                traces_for_llm[rule_id] = execution_path.get_llm_context()
+        
+        return {
+            'fired_rules': self.fired_rules,
+            'rule_traces': traces_for_llm,
+            'facts_added': self._verdict,
+            'execution_summary': {
+                'rules_evaluated': len(self._rule_traces),
+                'rules_fired': len(self.fired_rules),
+                'facts_modified': len(self._verdict),
+                'total_execution_time_ms': (time.perf_counter() - self.start_time) * 1000
+            },
+            'reasoning_chain': self._build_reasoning_chain()
+        }
+    
+    def _build_reasoning_chain(self) -> List[Dict[str, Any]]:
+        """Build a structured reasoning chain for LLM consumption."""
+        chain = []
+        
+        for rule_id in self.fired_rules:
+            execution_path = self._rule_traces.get(rule_id)
+            if execution_path and hasattr(execution_path, 'get_llm_context'):
+                llm_context = execution_path.get_llm_context()
+                chain.append({
+                    'rule_id': rule_id,
+                    'condition': llm_context.get('expression', 'unknown'),
+                    'result': llm_context.get('result', False),
+                    'explanation': llm_context.get('explanation', 'No explanation available'),
+                    'key_factors': [step['explanation'] for step in llm_context.get('critical_path', [])],
+                    'execution_time_ms': llm_context.get('total_time_ms', 0)
+                })
+            else:
+                # Fallback for rules without execution paths
+                reasoning_step = next((step for step in self.reasoning_steps if step.startswith(f"✓ {rule_id}:")), "")
+                chain.append({
+                    'rule_id': rule_id,
+                    'condition': 'unknown',
+                    'result': True,  # Must be true if rule fired
+                    'explanation': reasoning_step,
+                    'key_factors': [],
+                    'execution_time_ms': 0
+                })
+        
+        return chain
     
     @property
     def verdict(self) -> Dict[str, Any]:

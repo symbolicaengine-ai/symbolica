@@ -7,8 +7,8 @@ import time
 from typing import Any
 
 from symbolica import Engine, facts
-from symbolica.core.exceptions import ValidationError, EvaluationError
-from symbolica._internal.evaluator import ASTEvaluator
+from symbolica.core.infrastructure.exceptions import ValidationError, EvaluationError
+from symbolica._internal.evaluation.evaluator import ASTEvaluator
 
 
 class TestCustomFunctionRegistration:

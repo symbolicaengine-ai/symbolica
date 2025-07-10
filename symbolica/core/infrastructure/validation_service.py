@@ -7,7 +7,7 @@ Separated from Engine to follow Single Responsibility Principle.
 """
 
 from typing import List, Set, Dict
-from .models import Rule
+from ..models import Rule
 from .exceptions import ValidationError
 
 

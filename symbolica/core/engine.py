@@ -8,21 +8,22 @@ Refactored to use focused components following Single Responsibility Principle.
 
 import time
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
-from .exceptions import (
+from .infrastructure.exceptions import (
     ValidationError, ExecutionError, EvaluationError, 
     DAGError, ConfigurationError, ErrorCollector, FunctionError
 )
-from .loader import RuleLoader
-from .function_registry import FunctionRegistry
-from .validation_service import ValidationService
-from .temporal_service import TemporalService
-from .._internal.evaluator import ASTEvaluator
-from .._internal.dag import DAGStrategy
-from .._internal.backward_chainer import BackwardChainer
+from .infrastructure.loader import RuleLoader
+from .infrastructure.function_registry import FunctionRegistry
+from .infrastructure.validation_service import ValidationService
+from .infrastructure.temporal_service import TemporalService
+from .._internal.evaluation.evaluator import ASTEvaluator
+from .._internal.strategies.dag import DAGStrategy
+from .._internal.strategies.backward_chainer import BackwardChainer
 
 
 class Engine:
@@ -70,6 +71,7 @@ class Engine:
         
         # Initialize execution components
         self._evaluator = ASTEvaluator()
+        self._executor = self._evaluator  # Backward compatibility alias
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
         
@@ -88,6 +90,84 @@ class Engine:
         # Connect function registry to evaluator
         for name, func in self._function_registry._functions.items():
             self._evaluator.register_function(name, func)
+    
+    def _is_expression(self, value: Any) -> bool:
+        """Detect if a value should be treated as an expression to evaluate.
+        
+        Args:
+            value: Value to check
+            
+        Returns:
+            True if value appears to be an expression, False otherwise
+        """
+        if not isinstance(value, str):
+            return False
+        
+        # Skip empty strings
+        if not value.strip():
+            return False
+        
+        # Check for arithmetic operators
+        arithmetic_ops = ['+', '-', '*', '/', '//', '%', '**']
+        has_arithmetic = any(op in value for op in arithmetic_ops)
+        
+        # Check for parentheses (likely mathematical expression)
+        has_parentheses = '(' in value and ')' in value
+        
+        # Check for function calls (word followed by parentheses)
+        has_function_call = re.search(r'\w+\s*\(', value)
+        
+        # Check for comparison operators (field access patterns)
+        comparison_ops = ['==', '!=', '<', '>', '<=', '>=']
+        has_comparisons = any(op in value for op in comparison_ops)
+        
+        # Check for variable patterns (words that aren't obvious strings)
+        # This is a heuristic - variables typically don't have spaces unless in quotes
+        words = re.findall(r'\w+', value)
+        has_variables = len(words) > 0 and not value.startswith('"') and not value.startswith("'")
+        
+        # If it has arithmetic, parentheses, function calls, or looks like a calculation, treat as expression
+        is_likely_expression = (
+            has_arithmetic or 
+            has_parentheses or 
+            has_function_call or
+            (has_variables and not ' ' in value.strip()) or  # Single words or connected with operators
+            has_comparisons
+        )
+        
+        # Additional checks to avoid false positives
+        # Skip if it's clearly a sentence (multiple words with spaces and no operators)
+        if ' ' in value and not any(op in value for op in arithmetic_ops + comparison_ops) and not has_parentheses:
+            return False
+        
+        # Skip if it looks like a URL, file path, or other string literal
+        if any(pattern in value.lower() for pattern in ['http://', 'https://', '\\', '/', '.com', '.org']):
+            return False
+        
+        return is_likely_expression
+    
+    def _evaluate_action_value(self, value: Any, context: ExecutionContext) -> Any:
+        """Evaluate an action value, computing expressions as numbers.
+        
+        Args:
+            value: Raw action value from rule
+            context: Current execution context
+            
+        Returns:
+            Evaluated value (computed if expression, original if literal)
+        """
+        # Only attempt evaluation for potential expressions
+        if not self._is_expression(value):
+            return value
+        
+        try:
+            # Use the same evaluator as conditions
+            result, _ = self._evaluator._core.evaluate(str(value), context)
+            return result
+        except Exception:
+            # If evaluation fails, return original value
+            # This ensures backward compatibility
+            return value
     
     # Rule Loading Methods (delegated to RuleLoader)
     @classmethod
@@ -179,13 +259,14 @@ class Engine:
         # Execute rules iteratively until convergence
         self._execute_rules_iteratively(context)
         
-        # Build result
+        # Build result with context for hierarchical tracing
         execution_time_ms = (time.perf_counter() - start_time) * 1000
         return ExecutionResult(
             verdict=context.verdict,
             fired_rules=context.fired_rules,
             execution_time_ms=execution_time_ms,
-            reasoning=context.reasoning
+            reasoning=context.reasoning,
+            _context=context  # Store context for rich tracing access
         )
     
     def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
@@ -255,17 +336,32 @@ class Engine:
             True if the rule fired, False otherwise
         """
         try:
-            # Evaluate with trace to get detailed explanation
-            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+            # Evaluate with execution path for detailed analysis
+            if hasattr(self._evaluator, 'evaluate_with_execution_path'):
+                execution_path = self._evaluator.evaluate_with_execution_path(rule.condition, context)
+                # Store the execution path for LLM processing
+                context.store_rule_trace(rule.id, execution_path)
+                
+                # Use execution path results
+                trace_result = execution_path.result
+                detailed_reason = execution_path.explain()
+            else:
+                # Fallback to simple trace
+                trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+                trace_result = trace.result
+                detailed_reason = trace.explain()
             
-            if trace.result:
-                # Apply actions
+            if trace_result:
+                # Apply actions with expression evaluation
+                evaluated_actions = {}
                 for key, value in rule.actions.items():
-                    context.set_fact(key, value)
+                    # Evaluate expressions, keep literals as-is
+                    evaluated_value = self._evaluate_action_value(value, context)
+                    context.set_fact(key, evaluated_value)
+                    evaluated_actions[key] = evaluated_value
                 
                 # Record detailed reasoning using trace
-                detailed_reason = trace.explain()
-                actions_str = ", ".join([f"{k}={v}" for k, v in rule.actions.items()])
+                actions_str = ", ".join([f"{k}={v}" for k, v in evaluated_actions.items()])
                 reason = f"{detailed_reason}, set {actions_str}"
                 context.rule_fired(rule.id, reason, triggered_by)
                 
@@ -418,12 +514,16 @@ class Engine:
             'total_functions': len(self.list_functions())
         }
         
+        avg_priority = sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0
+        
         analysis = {
             'rule_count': len(self._rules),  # Add rule_count at top level for backward compatibility
+            'rule_ids': [rule.id for rule in self._rules],  # Add rule_ids at top level for backward compatibility
+            'avg_priority': avg_priority,  # Add avg_priority at top level for backward compatibility
             'rule_analysis': {
                 'rule_count': len(self._rules),
                 'rule_ids': [rule.id for rule in self._rules],
-                'avg_priority': sum(rule.priority for rule in self._rules) / len(self._rules) if self._rules else 0,
+                'avg_priority': avg_priority,
                 **dependency_analysis
             },
             'temporal_analysis': temporal_stats,

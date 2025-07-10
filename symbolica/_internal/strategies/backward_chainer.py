@@ -8,8 +8,8 @@ Simple reverse search on the rule DAG to find rules that can achieve a goal.
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..core.models import Rule, Goal, Facts
-    from ..core.interfaces import ConditionEvaluator
+    from ...core.models import Rule, Goal, Facts
+    from ...core.interfaces import ConditionEvaluator
 
 
 class BackwardChainer:
@@ -40,7 +40,7 @@ class BackwardChainer:
             return False
         
         # Test if any supporting rule would fire
-        from ..core.models import ExecutionContext
+        from ...core.models import ExecutionContext
         temp_context = ExecutionContext(
             original_facts=current_facts,
             enriched_facts=current_facts.data.copy(),
