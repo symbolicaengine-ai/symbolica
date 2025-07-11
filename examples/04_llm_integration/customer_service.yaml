@@ -1,0 +1,58 @@
+rules:
+  # Sentiment-based routing
+  - id: angry_customer
+    priority: 100
+    condition: "PROMPT('Analyze emotion in: {message}') == 'angry'"
+    actions:
+      priority_level: "urgent"
+      route_to: "senior_agent"
+      escalated: true
+    tags: ["emotion", "escalation"]
+  
+  - id: positive_feedback
+    priority: 90
+    condition: "PROMPT('Analyze sentiment: {message}') == 'positive'"
+    actions:
+      sentiment: "positive"
+      route_to: "feedback_team"
+      follow_up_survey: true
+    tags: ["sentiment", "feedback"]
+  
+  # Category-based routing
+  - id: technical_issue
+    priority: 80
+    condition: "PROMPT('Is this a technical issue: {message}', 'bool') == true"
+    actions:
+      category: "technical"
+      route_to: "tech_support"
+      estimated_resolution: 30
+    tags: ["category", "technical"]
+  
+  - id: billing_inquiry
+    priority: 70
+    condition: "PROMPT('Categorize this message: {message}') == 'billing'"
+    actions:
+      category: "billing"
+      route_to: "billing_department"
+      estimated_resolution: 15
+    tags: ["category", "billing"]
+  
+  # Urgency assessment
+  - id: urgent_request
+    priority: 95
+    condition: "PROMPT('Rate urgency 1-10: {message}', 'int') >= 8"
+    actions:
+      urgency_score: "high"
+      requires_immediate_attention: true
+      max_response_time: 10
+    tags: ["urgency", "immediate"]
+  
+  # Complex analysis
+  - id: satisfaction_analysis
+    priority: 60
+    condition: "PROMPT('Rate satisfaction 1-10: {message}', 'int') <= 3"
+    actions:
+      satisfaction_low: true
+      requires_manager_review: true
+      compensation_eligible: true
+    tags: ["satisfaction", "review"] 
