@@ -1,0 +1,59 @@
+rules:
+  # CPU monitoring
+  - id: cpu_sustained_high
+    priority: 100
+    condition: "sustained_above('cpu_usage', 85, 300)"  # >85% for 5 minutes
+    actions:
+      alert: "CPU sustained high"
+      severity: "critical"
+      action_required: true
+    tags: ["cpu", "critical"]
+  
+  - id: cpu_spike
+    priority: 90
+    condition: "recent_max('cpu_usage', 60) > 95"  # Peak >95% in last minute
+    actions:
+      alert: "CPU spike detected"
+      severity: "warning"
+    tags: ["cpu", "spike"]
+  
+  # Memory monitoring
+  - id: memory_trending_up
+    priority: 80
+    condition: "recent_avg('memory_usage', 300) > recent_avg('memory_usage', 600)"  # 5min avg > 10min avg
+    actions:
+      alert: "Memory usage trending upward"
+      severity: "warning"
+      trend: "increasing"
+    tags: ["memory", "trend"]
+  
+  # Network monitoring
+  - id: high_error_rate
+    priority: 85
+    condition: "recent_count('network_errors', 300) > 50"  # >50 errors in 5 minutes
+    actions:
+      alert: "High network error rate"
+      severity: "critical"
+      investigate_network: true
+    tags: ["network", "errors"]
+  
+  # Application monitoring
+  - id: response_time_degraded
+    priority: 75
+    condition: "recent_avg('response_time', 180) > 2000"  # Avg >2s in 3 minutes
+    actions:
+      alert: "Response time degraded"
+      severity: "warning"
+      check_database: true
+    tags: ["performance", "response"]
+  
+  # Composite conditions
+  - id: system_overload
+    priority: 95
+    condition: "recent_avg('cpu_usage', 300) > 80 and recent_avg('memory_usage', 300) > 85"
+    actions:
+      alert: "System overload detected"
+      severity: "critical"
+      scale_up: true
+      notify_ops: true
+    tags: ["system", "overload"] 

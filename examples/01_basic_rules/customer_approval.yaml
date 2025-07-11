@@ -1,0 +1,26 @@
+rules:
+  - id: vip_customer
+    priority: 100
+    condition: "customer_tier == 'vip' and credit_score > 750"
+    actions:
+      approved: true
+      credit_limit: 50000
+      reason: "VIP customer with excellent credit"
+    tags: ["vip", "approval"]
+  
+  - id: regular_customer
+    priority: 50
+    condition: "credit_score > 650 and annual_income > 50000"
+    actions:
+      approved: true
+      credit_limit: 25000
+      reason: "Good credit and sufficient income"
+    tags: ["regular", "approval"]
+  
+  - id: high_risk
+    priority: 75
+    condition: "previous_defaults > 0 or credit_score < 600"
+    actions:
+      approved: false
+      reason: "High risk profile"
+    tags: ["risk", "rejection"] 

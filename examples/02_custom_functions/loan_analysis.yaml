@@ -1,0 +1,36 @@
+rules:
+  - id: low_risk_loan
+    priority: 100
+    condition: "risk_score(credit_score, income, debt_ratio) == 'low'"
+    actions:
+      approved: true
+      interest_rate: 0.05
+      loan_type: "prime"
+    tags: ["low_risk", "prime"]
+  
+  - id: medium_risk_loan
+    priority: 90
+    condition: "risk_score(credit_score, income, debt_ratio) == 'medium' and fraud_check(loan_amount, avg_transaction) == False"
+    actions:
+      approved: true
+      interest_rate: 0.08
+      loan_type: "standard"
+      requires_verification: true
+    tags: ["medium_risk", "standard"]
+  
+  - id: high_risk_rejection
+    priority: 80
+    condition: "risk_score(credit_score, income, debt_ratio) == 'high'"
+    actions:
+      approved: false
+      reason: "High risk profile"
+    tags: ["high_risk", "rejection"]
+  
+  - id: fraud_detection
+    priority: 95
+    condition: "fraud_check(loan_amount, avg_transaction) == True"
+    actions:
+      approved: false
+      flagged_for_review: true
+      reason: "Potential fraud detected"
+    tags: ["fraud", "security"] 

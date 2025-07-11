@@ -1,0 +1,75 @@
+rules:
+  # Initial approval rules
+  - id: vip_approval
+    priority: 100
+    condition: "customer_tier == 'vip' and credit_score > 750"
+    actions:
+      approved: true
+      credit_limit: 50000
+      approval_type: "vip"
+    triggers: ["vip_welcome", "assign_banker"]
+    tags: ["approval", "vip"]
+  
+  - id: standard_approval
+    priority: 90
+    condition: "credit_score > 650 and annual_income > 50000"
+    actions:
+      approved: true
+      credit_limit: 25000
+      approval_type: "standard"
+    triggers: ["standard_welcome", "setup_account"]
+    tags: ["approval", "standard"]
+  
+  # Triggered workflows
+  - id: vip_welcome
+    priority: 50
+    condition: "approved == True and approval_type == 'vip'"
+    actions:
+      welcome_package_sent: true
+      priority_support: true
+      personal_manager: true
+    triggers: ["schedule_consultation"]
+    tags: ["workflow", "vip"]
+  
+  - id: standard_welcome
+    priority: 50
+    condition: "approved == True and approval_type == 'standard'"
+    actions:
+      welcome_email_sent: true
+      online_tutorial_assigned: true
+    triggers: ["setup_account"]
+    tags: ["workflow", "standard"]
+  
+  - id: assign_banker
+    priority: 40
+    condition: "approved == True and credit_limit >= 50000"
+    actions:
+      personal_banker_assigned: true
+      banker_tier: "senior"
+    tags: ["assignment", "vip"]
+  
+  - id: setup_account
+    priority: 30
+    condition: "approved == True"
+    actions:
+      account_created: true
+      debit_card_ordered: true
+      online_banking_enabled: true
+    triggers: ["send_confirmation"]
+    tags: ["setup"]
+  
+  - id: schedule_consultation
+    priority: 25
+    condition: "personal_manager == True"
+    actions:
+      consultation_scheduled: true
+      consultation_type: "wealth_management"
+    tags: ["consultation", "vip"]
+  
+  - id: send_confirmation
+    priority: 20
+    condition: "account_created == True"
+    actions:
+      confirmation_sent: true
+      onboarding_complete: true
+    tags: ["confirmation"] 

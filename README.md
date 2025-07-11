@@ -41,8 +41,6 @@ AI agents need **deterministic logic** for critical decisions, but also **flexib
 pip install symbolica
 
 # For LLM features (optional)
-pip install symbolica[llm]
-# or
 pip install openai
 ```
 
@@ -614,14 +612,19 @@ except EvaluationError as e:
 
 ## Examples
 
-Check out the [examples/](examples/) directory:
+Check out the [examples/](examples/) directory for a comprehensive cookbook with progressive learning:
 
-- **[basic_example.py](examples/basic_example.py)** - Simple customer approval
-- **[enhanced_structured_conditions_example.py](examples/enhanced_structured_conditions_example.py)** - Complex nested logic
-- **[simple_backward_search_example.py](examples/simple_backward_search_example.py)** - Goal-directed reasoning
-- **[custom_functions_example.py](examples/custom_functions_example.py)** - Custom business logic functions
-- **[temporal_functions_example.py](examples/temporal_functions_example.py)** - Time-series monitoring and alerting
-- **[llm_security_demo.py](examples/llm_security_demo.py)** - LLM integration with security features
+- **[01_basic_rules/](examples/01_basic_rules/)** - Foundation: Core Symbolica concepts
+- **[02_custom_functions/](examples/02_custom_functions/)** - Business Logic: Extending rules with custom functions  
+- **[03_rule_chaining/](examples/03_rule_chaining/)** - Automation: Building workflows with rule triggers
+- **[04_llm_integration/](examples/04_llm_integration/)** - AI-Powered: Hybrid AI-rule decision making
+- **[05_temporal_functions/](examples/05_temporal_functions/)** - Monitoring: Time-series analysis and alerting
+- **[06_backward_chaining/](examples/06_backward_chaining/)** - Planning: Goal-directed reasoning
+- **[07_complex_workflows/](examples/07_complex_workflows/)** - Integration: All features working together
+- **[10_template_evaluation/](examples/10_template_evaluation/)** - Templates: Dynamic content generation with variable substitution
+- **[11_mathematical_temporal/](examples/11_mathematical_temporal/)** - Analytics: Complex mathematical calculations and time-series analysis
+
+Each example is self-contained with clear documentation and real-world use cases. See the [examples README](examples/README.md) for detailed setup instructions and feature matrix.
 
 ## Performance
 

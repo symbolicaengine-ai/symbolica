@@ -1,0 +1,26 @@
+rules:
+  # Performance monitoring
+  - id: approval_rate_low
+    priority: 70
+    condition: "recent_count('approvals', 3600) < 10"  # <10 approvals per hour
+    actions:
+      alert: "Low approval rate detected"
+      review_criteria: true
+    tags: ["monitoring", "performance"]
+  
+  - id: fraud_rate_high
+    priority: 75
+    condition: "recent_count('fraud_detected', 3600) > 5"  # >5 fraud cases per hour
+    actions:
+      alert: "High fraud rate detected"
+      tighten_security: true
+    tags: ["monitoring", "security"]
+  
+  # System health
+  - id: ai_system_slow
+    priority: 65
+    condition: "recent_avg('ai_response_time', 300) > 2000"  # >2s average
+    actions:
+      alert: "AI system response slow"
+      fallback_to_traditional: true
+    tags: ["monitoring", "ai", "performance"] 
