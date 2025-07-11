@@ -60,7 +60,7 @@ class TestCustomFunctionRegistration:
         engine = Engine()
         
         # Invalid identifier
-        with pytest.raises(ValidationError, match="must be a valid identifier"):
+        with pytest.raises(ValidationError, match="is not a valid identifier"):
             engine.register_function("invalid-name", lambda x: x)
         
         # Reserved word

@@ -8,7 +8,7 @@ from typing import Any
 
 from symbolica import Engine, facts
 from symbolica._internal.storage.temporal_store import TemporalStore, TimeSeriesPoint
-from symbolica.core.infrastructure.exceptions import ValidationError, EvaluationError
+from symbolica.core.exceptions import ValidationError, EvaluationError
 
 
 class TestTemporalStore:
