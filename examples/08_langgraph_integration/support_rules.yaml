@@ -1,0 +1,150 @@
+rules:
+  # VIP Customer Priority Rules
+  - id: "vip_critical_escalation"
+    priority: 100
+    condition: "customer_tier == 'vip' and PROMPT('Rate urgency 1-10: {message_content}', 'int') >= 8"
+    actions:
+      priority: "critical"
+      assigned_agent: "senior_specialist"
+      escalated: true
+      response_time_sla: 15
+    tags: ["vip", "critical", "escalation"]
+
+  - id: "vip_standard_priority"
+    priority: 90
+    condition: "customer_tier == 'vip'"
+    actions:
+      priority: "high"
+      assigned_agent: "vip_specialist"
+      escalated: false
+      response_time_sla: 30
+    tags: ["vip", "high_priority"]
+
+  # Premium Customer Rules
+  - id: "premium_billing_issue"
+    priority: 80
+    condition: "customer_tier == 'premium' and issue_category == 'billing'"
+    actions:
+      priority: "high"
+      assigned_agent: "billing_specialist"
+      escalated: false
+      response_time_sla: 60
+    tags: ["premium", "billing"]
+
+  - id: "premium_technical_issue"
+    priority: 75
+    condition: "customer_tier == 'premium' and issue_category == 'technical'"
+    actions:
+      priority: "medium"
+      assigned_agent: "technical_specialist"
+      escalated: false
+      response_time_sla: 120
+    tags: ["premium", "technical"]
+
+  # Complaint and Escalation Rules
+  - id: "angry_customer_detection"
+    priority: 95
+    condition: "PROMPT('Is customer angry/frustrated in: {message_content}', 'bool') == true"
+    actions:
+      priority: "high"
+      assigned_agent: "escalation_specialist"
+      escalated: true
+      requires_manager_review: true
+    tags: ["complaint", "escalation", "customer_satisfaction"]
+
+  - id: "critical_system_issue"
+    priority: 100
+    condition: "PROMPT('Is this a system outage/critical issue: {message_content}', 'bool') == true"
+    actions:
+      priority: "critical"
+      assigned_agent: "incident_response"
+      escalated: true
+      notify_engineering: true
+    tags: ["system", "critical", "incident"]
+
+  # Business Hours and Queue Management
+  - id: "after_hours_handling"
+    priority: 60
+    condition: "current_time_hour < 9 or current_time_hour > 17 or is_weekend == true"
+    actions:
+      priority: "medium"
+      assigned_agent: "after_hours_team"
+      escalated: false
+      auto_response: "Thank you for contacting us. Due to current time, response may be delayed."
+    tags: ["after_hours", "scheduling"]
+
+  - id: "high_queue_load"
+    priority: 55
+    condition: "queue_length > 20"
+    actions:
+      priority: "medium"
+      assigned_agent: "overflow_team"
+      escalated: false
+      estimated_wait: "{{ queue_length * 3 }} minutes"
+    tags: ["queue_management", "capacity"]
+
+  # Standard Customer Rules
+  - id: "standard_technical_support"
+    priority: 40
+    condition: "customer_tier == 'standard' and issue_category == 'technical'"
+    actions:
+      priority: "medium"
+      assigned_agent: "general_technical"
+      escalated: false
+      response_time_sla: 240
+    tags: ["standard", "technical"]
+
+  - id: "standard_billing_support"
+    priority: 35
+    condition: "customer_tier == 'standard' and issue_category == 'billing'"
+    actions:
+      priority: "medium"
+      assigned_agent: "general_billing"
+      escalated: false
+      response_time_sla: 180
+    tags: ["standard", "billing"]
+
+  - id: "general_inquiry"
+    priority: 20
+    condition: "issue_category == 'general'"
+    actions:
+      priority: "low"
+      assigned_agent: "general_support"
+      escalated: false
+      response_time_sla: 480
+      auto_response_eligible: true
+    tags: ["general", "low_priority"]
+
+  # AI-Enhanced Routing
+  - id: "complex_issue_detection"
+    priority: 70
+    condition: "PROMPT('Rate complexity 1-10: {message_content}', 'int') > 7"
+    actions:
+      priority: "high"
+      assigned_agent: "senior_specialist"
+      escalated: false
+      requires_expertise: true
+      complexity_score: "{{ LAST_PROMPT_RESULT }}"
+    tags: ["complex", "specialist_required"]
+
+  - id: "sentiment_based_priority"
+    priority: 65
+    condition: "PROMPT('Rate customer satisfaction risk 1-10: {message_content}', 'int') > 7"
+    actions:
+      priority: "high"
+      assigned_agent: "customer_success"
+      escalated: false
+      satisfaction_risk: "{{ LAST_PROMPT_RESULT }}"
+      follow_up_required: true
+    tags: ["satisfaction", "retention"]
+
+  # Fallback Rule
+  - id: "default_routing"
+    priority: 10
+    condition: "true"  # Always matches as fallback
+    actions:
+      priority: "medium"
+      assigned_agent: "general_support"
+      escalated: false
+      response_time_sla: 360
+    tags: ["default", "fallback"] 
