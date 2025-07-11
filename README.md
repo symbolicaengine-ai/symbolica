@@ -621,6 +621,8 @@ Check out the [examples/](examples/) directory for a comprehensive cookbook with
 - **[05_temporal_functions/](examples/05_temporal_functions/)** - Monitoring: Time-series analysis and alerting
 - **[06_backward_chaining/](examples/06_backward_chaining/)** - Planning: Goal-directed reasoning
 - **[07_complex_workflows/](examples/07_complex_workflows/)** - Integration: All features working together
+- **[10_template_evaluation/](examples/10_template_evaluation/)** - Templates: Dynamic content generation with variable substitution
+- **[11_mathematical_temporal/](examples/11_mathematical_temporal/)** - Analytics: Complex mathematical calculations and time-series analysis
 
 Each example is self-contained with clear documentation and real-world use cases. See the [examples README](examples/README.md) for detailed setup instructions and feature matrix.
 
