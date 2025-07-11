@@ -6,7 +6,7 @@ Orchestrates focused evaluator components for safe, sandboxed expression evaluat
 Refactored from God object to follow Single Responsibility Principle.
 """
 
-from typing import Any, Dict, Set, Callable, TYPE_CHECKING
+from typing import Any, Dict, Set, Callable, TYPE_CHECKING, Optional
 from ...core.interfaces import ConditionEvaluator
 from .core_evaluator import CoreEvaluator
 from .trace_evaluator import TraceEvaluator, ConditionTrace
@@ -17,6 +17,7 @@ from .builtin_functions import get_builtin_function_descriptions
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
     from .execution_path import ExecutionPath
+    from ...llm.prompt_evaluator import PromptEvaluator
 
 
 class ASTEvaluator(ConditionEvaluator):
@@ -30,12 +31,12 @@ class ASTEvaluator(ConditionEvaluator):
     - FieldExtractor: Field name extraction
     """
     
-    def __init__(self):
+    def __init__(self, prompt_evaluator: Optional['PromptEvaluator'] = None):
         """Initialize evaluator with focused components."""
-        # Core components
-        self._core = CoreEvaluator()
-        self._trace_evaluator = TraceEvaluator()
-        self._execution_path_evaluator = ExecutionPathEvaluator()
+        # Core components (pass prompt evaluator to all)
+        self._core = CoreEvaluator(prompt_evaluator)
+        self._trace_evaluator = TraceEvaluator(prompt_evaluator)
+        self._execution_path_evaluator = ExecutionPathEvaluator(prompt_evaluator)
         self._field_extractor = FieldExtractor()
         
         # Keep function registry synchronized across components

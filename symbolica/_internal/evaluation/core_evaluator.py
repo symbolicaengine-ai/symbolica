@@ -11,13 +11,14 @@ import ast
 import signal
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Any, Dict, Tuple, Callable, TYPE_CHECKING, Set, Type
+from typing import Any, Dict, Tuple, Callable, TYPE_CHECKING, Set, Type, Optional
 from ...core.exceptions import EvaluationError, FunctionError, SecurityError
 from ...core.config.system_config import SystemConfig
 from .builtin_functions import get_builtin_functions
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
+    from ...llm.prompt_evaluator import PromptEvaluator
 
 
 # Whitelist of safe AST node types
@@ -92,10 +93,11 @@ def evaluation_timeout(seconds: int):
 class CoreEvaluator:
     """Core AST evaluator focused solely on evaluation logic."""
     
-    def __init__(self):
+    def __init__(self, prompt_evaluator: Optional['PromptEvaluator'] = None):
         """Initialize core evaluator with built-in functions."""
-        self._builtin_functions = get_builtin_functions()
+        self._builtin_functions = get_builtin_functions(prompt_evaluator)
         self._custom_functions: Dict[str, Callable] = {}
+        self._prompt_evaluator = prompt_evaluator
         self._recursion_depth = 0
     
     def register_function(self, name: str, func: Callable) -> None:
@@ -280,7 +282,24 @@ class CoreEvaluator:
         
         func_name = node.func.id
         
-        # Evaluate arguments
+        # Special handling for PROMPT() function which needs context
+        if func_name == "PROMPT" and self._prompt_evaluator:
+            # Evaluate arguments for PROMPT()
+            args = []
+            field_values = {}
+            for arg in node.args:
+                val, fields = self._eval_node(arg, context)
+                args.append(val)
+                field_values.update(fields)
+            
+            try:
+                # PROMPT() needs access to context facts for variable substitution
+                result = self._prompt_evaluator.evaluate_prompt(args, context.enriched_facts)
+                return result, field_values
+            except Exception as e:
+                raise EvaluationError(f"PROMPT() function failed: {str(e)}")
+        
+        # Regular function handling
         args = []
         field_values = {}
         for arg in node.args:

@@ -8,21 +8,22 @@ Extracted from evaluator.py to follow Single Responsibility Principle.
 
 import ast
 import time
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Optional
 from .core_evaluator import CoreEvaluator
 from .execution_path import ExecutionPathBuilder, ExecutionPath, OperationType
 from ...core.exceptions import EvaluationError, FunctionError, ValidationError
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
+    from ...llm.prompt_evaluator import PromptEvaluator
 
 
 class ExecutionPathEvaluator:
     """Evaluator that wraps CoreEvaluator and adds execution path tracking."""
     
-    def __init__(self):
+    def __init__(self, prompt_evaluator: Optional['PromptEvaluator'] = None):
         """Initialize execution path evaluator with core evaluator."""
-        self._core = CoreEvaluator()
+        self._core = CoreEvaluator(prompt_evaluator)
     
     def register_function(self, name: str, func: Any) -> None:
         """Register a custom function."""
@@ -186,37 +187,56 @@ class ExecutionPathEvaluator:
         # Start tracking function call
         step_id = builder.start_operation(OperationType.FUNCTION_CALL, func_name)
         
-        # Evaluate arguments
-        args = []
-        for arg in node.args:
-            val = self._eval_node_with_path(arg, context, builder)
-            args.append(val)
-        
-        # Execute function
-        try:
-            if func_name in self._core._builtin_functions:
-                result = self._core._builtin_functions[func_name](args)
-                function_type = "builtin"
+        # Special handling for PROMPT() function which needs context
+        if func_name == "PROMPT" and self._core._prompt_evaluator:
+            # Evaluate arguments for PROMPT()
+            args = []
+            for arg in node.args:
+                val = self._eval_node_with_path(arg, context, builder)
+                args.append(val)
+            
+            try:
+                # PROMPT() needs access to context facts for variable substitution
+                result = self._core._prompt_evaluator.evaluate_prompt(args, context.enriched_facts)
+                function_type = "llm"
                 error = None
-            elif func_name in self._core._custom_functions:
-                result = self._core._custom_functions[func_name](*args)
-                function_type = "custom"
-                error = None
-            else:
-                raise EvaluationError(f"Unknown function: {func_name}")
-        except Exception as e:
-            result = None
-            function_type = "unknown"
-            error = str(e)
-            if func_name in self._core._custom_functions:
-                raise FunctionError(
-                    f"Error in custom function: {str(e)}", 
-                    function_name=func_name,
-                    args=args,
-                    original_error=e
-                )
-            else:
-                raise EvaluationError(f"Function {func_name} failed: {str(e)}")
+            except Exception as e:
+                result = None
+                function_type = "llm"
+                error = str(e)
+                raise EvaluationError(f"PROMPT() function failed: {str(e)}")
+        else:
+            # Regular function handling
+            args = []
+            for arg in node.args:
+                val = self._eval_node_with_path(arg, context, builder)
+                args.append(val)
+            
+            # Execute function
+            try:
+                if func_name in self._core._builtin_functions:
+                    result = self._core._builtin_functions[func_name](args)
+                    function_type = "builtin"
+                    error = None
+                elif func_name in self._core._custom_functions:
+                    result = self._core._custom_functions[func_name](*args)
+                    function_type = "custom"
+                    error = None
+                else:
+                    raise EvaluationError(f"Unknown function: {func_name}")
+            except Exception as e:
+                result = None
+                function_type = "unknown"
+                error = str(e)
+                if func_name in self._core._custom_functions:
+                    raise FunctionError(
+                        f"Error in custom function: {str(e)}", 
+                        function_name=func_name,
+                        args=args,
+                        original_error=e
+                    )
+                else:
+                    raise EvaluationError(f"Function {func_name} failed: {str(e)}")
         
         step_time = (time.perf_counter() - step_start) * 1000
         builder.finish_operation(step_id, result, {
