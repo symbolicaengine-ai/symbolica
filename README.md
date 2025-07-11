@@ -26,6 +26,7 @@ AI agents need **deterministic logic** for critical decisions, but also **flexib
 - **Sub-millisecond execution** - 6,000+ executions per second
 - **LLM Integration** - Built-in PROMPT() function with security hardening
 - **Hybrid AI-Rule workflows** - Combine deterministic rules with LLM reasoning
+- **Template evaluation** - Dynamic content generation with variable substitution, mathematical expressions, and conditional logic
 - **Custom functions** - Extend rules with safe lambda functions for complex business logic
 - **Temporal functions** - Time-series analysis and pattern detection for monitoring & alerting
 - **Clean explanations** - Perfect for LLM integration and human review
