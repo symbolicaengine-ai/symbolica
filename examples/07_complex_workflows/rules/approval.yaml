@@ -1,0 +1,28 @@
+rules:
+  # Initial application analysis
+  - id: ai_risk_assessment
+    priority: 100
+    condition: "PROMPT('Analyze credit risk for: {application_data}', 'int') <= 3"
+    actions:
+      ai_risk_score: "{{ LAST_PROMPT_RESULT }}"
+      ai_approved: true
+      assessment_method: "ai_analysis"
+    tags: ["ai", "risk", "initial"]
+  
+  - id: traditional_risk_check
+    priority: 90
+    condition: "ai_approved != true and risk_score(credit_score, income, debt_ratio) == 'low'"
+    actions:
+      traditional_risk_approved: true
+      assessment_method: "traditional"
+    tags: ["traditional", "risk"]
+  
+  # Combined approval logic
+  - id: final_approval
+    priority: 80
+    condition: "(ai_approved == true or traditional_risk_approved == true) and fraud_check(loan_amount, avg_transaction) == false"
+    actions:
+      approved: true
+      approval_timestamp: "{{ current_timestamp() }}"
+    triggers: ["send_approval_notification", "setup_account"]
+    tags: ["approval", "final"] 

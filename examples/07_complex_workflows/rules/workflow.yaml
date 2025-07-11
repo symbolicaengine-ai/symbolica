@@ -1,0 +1,45 @@
+rules:
+  # Notification workflows
+  - id: send_approval_notification
+    priority: 50
+    condition: "approved == true"
+    actions:
+      notification_sent: true
+      notification_method: "{{ PROMPT('Best notification method for {customer_tier} customer') }}"
+    triggers: ["update_crm"]
+    tags: ["workflow", "notification"]
+  
+  - id: setup_account
+    priority: 45
+    condition: "approved == true"
+    actions:
+      account_created: true
+      account_number: "{{ generate_account_number() }}"
+      initial_setup_complete: true
+    triggers: ["order_card", "setup_online_banking"]
+    tags: ["workflow", "setup"]
+  
+  # Follow-up workflows
+  - id: update_crm
+    priority: 40
+    condition: "notification_sent == true"
+    actions:
+      crm_updated: true
+      customer_status: "active"
+    tags: ["workflow", "crm"]
+  
+  - id: order_card
+    priority: 35
+    condition: "account_created == true"
+    actions:
+      card_ordered: true
+      estimated_delivery: "{{ calculate_delivery_date() }}"
+    tags: ["workflow", "card"]
+  
+  - id: setup_online_banking
+    priority: 30
+    condition: "account_created == true"
+    actions:
+      online_banking_enabled: true
+      temporary_password_sent: true
+    tags: ["workflow", "digital"] 
