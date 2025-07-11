@@ -1,21 +1,44 @@
 """
-Built-in Functions for Rule Evaluation
-======================================
+Built-in Functions
+==================
 
-Safe implementations of built-in functions used in rule conditions.
-Extracted from evaluator.py to follow Single Responsibility Principle.
+Safe implementations of built-in functions for expression evaluation.
+Extracted from evaluator.py to centralize function definitions.
 """
 
-from typing import Any, List, Dict, Callable
-from ...core.infrastructure.exceptions import EvaluationError
+from typing import Dict, Callable, Any, List
+from ...core.exceptions import EvaluationError
 
 
+def get_builtin_functions() -> Dict[str, Callable]:
+    """Get dictionary of all built-in functions."""
+    return {
+        'len': safe_len,
+        'sum': safe_sum,
+        'abs': safe_abs,
+        'startswith': safe_startswith,
+        'endswith': safe_endswith,
+        'contains': safe_contains
+    }
+
+
+def get_builtin_function_descriptions() -> Dict[str, str]:
+    """Get descriptions of all built-in functions."""
+    return {
+        'len': 'Get length of sequence',
+        'sum': 'Sum elements of sequence',
+        'abs': 'Absolute value',
+        'startswith': 'Check if string starts with substring',
+        'endswith': 'Check if string ends with substring',
+        'contains': 'Check if sequence contains element'
+    }
+
+
+# Built-in function implementations
 def safe_len(args: List[Any]) -> int:
     """Safe implementation of len() function."""
-    if not args:
-        raise EvaluationError("len() requires exactly 1 argument")
     if len(args) != 1:
-        raise EvaluationError(f"len() takes exactly 1 argument ({len(args)} given)")
+        raise EvaluationError("len() takes exactly one argument")
     
     obj = args[0]
     if obj is None:
@@ -24,30 +47,73 @@ def safe_len(args: List[Any]) -> int:
     try:
         return len(obj)
     except TypeError:
-        raise EvaluationError(f"len() argument must be a sequence, not {type(obj).__name__}")
+        raise EvaluationError(f"object of type '{type(obj).__name__}' has no len()")
 
 
 def safe_sum(args: List[Any]) -> float:
     """Safe implementation of sum() function."""
-    if not args:
-        raise EvaluationError("sum() requires exactly 1 argument")
     if len(args) != 1:
-        raise EvaluationError(f"sum() takes exactly 1 argument ({len(args)} given)")
+        raise EvaluationError("sum() takes exactly one argument")
     
-    obj = args[0]
-    if obj is None:
+    iterable = args[0]
+    if iterable is None:
         return 0
     
     try:
-        return sum(obj)
+        return sum(iterable)
+    except TypeError as e:
+        raise EvaluationError(f"sum() error: {e}")
+
+
+def safe_abs(args: List[Any]) -> float:
+    """Safe implementation of abs() function."""
+    if len(args) != 1:
+        raise EvaluationError("abs() takes exactly one argument")
+    
+    value = args[0]
+    if value is None:
+        raise EvaluationError("abs() cannot operate on None")
+    
+    try:
+        return abs(value)
     except TypeError:
-        raise EvaluationError(f"sum() argument must be iterable of numbers, not {type(obj).__name__}")
+        raise EvaluationError(f"bad operand type for abs(): '{type(value).__name__}'")
+
+
+def safe_startswith(args: List[Any]) -> bool:
+    """Safe implementation of startswith() function."""
+    if len(args) != 2:
+        raise EvaluationError("startswith() takes exactly two arguments")
+    
+    string, prefix = args
+    if string is None or prefix is None:
+        return False
+    
+    try:
+        return str(string).startswith(str(prefix))
+    except Exception as e:
+        raise EvaluationError(f"startswith() error: {e}")
+
+
+def safe_endswith(args: List[Any]) -> bool:
+    """Safe implementation of endswith() function."""
+    if len(args) != 2:
+        raise EvaluationError("endswith() takes exactly two arguments")
+    
+    string, suffix = args
+    if string is None or suffix is None:
+        return False
+    
+    try:
+        return str(string).endswith(str(suffix))
+    except Exception as e:
+        raise EvaluationError(f"endswith() error: {e}")
 
 
 def safe_contains(args: List[Any]) -> bool:
     """Safe implementation of contains() function."""
     if len(args) != 2:
-        raise EvaluationError(f"contains() takes exactly 2 arguments ({len(args)} given)")
+        raise EvaluationError("contains() takes exactly two arguments")
     
     container, item = args
     if container is None:
@@ -56,70 +122,5 @@ def safe_contains(args: List[Any]) -> bool:
     try:
         return item in container
     except TypeError:
-        raise EvaluationError(f"contains() first argument must be a container, not {type(container).__name__}")
-
-
-def safe_abs(args: List[Any]) -> float:
-    """Safe implementation of abs() function."""
-    if not args:
-        raise EvaluationError("abs() requires exactly 1 argument")
-    if len(args) != 1:
-        raise EvaluationError(f"abs() takes exactly 1 argument ({len(args)} given)")
-    
-    obj = args[0]
-    if obj is None:
-        raise EvaluationError("abs() argument cannot be None")
-    
-    try:
-        return abs(obj)
-    except TypeError:
-        raise EvaluationError(f"abs() argument must be a number, not {type(obj).__name__}")
-
-
-def safe_startswith(args: List[Any]) -> bool:
-    """Safe implementation of startswith() function."""
-    if len(args) != 2:
-        return False
-    if not isinstance(args[0], str):
-        return False
-    return args[0].startswith(args[1])
-
-
-def safe_endswith(args: List[Any]) -> bool:
-    """Safe implementation of endswith() function."""
-    if len(args) != 2:
-        return False
-    if not isinstance(args[0], str):
-        return False
-    return args[0].endswith(args[1])
-
-
-# Built-in function registry
-BUILTIN_FUNCTIONS: Dict[str, Callable] = {
-    'len': safe_len,
-    'sum': safe_sum,
-    'startswith': safe_startswith,
-    'endswith': safe_endswith,
-    'contains': safe_contains,
-    'abs': safe_abs
-}
-
-# Function descriptions for documentation
-BUILTIN_FUNCTION_DESCRIPTIONS: Dict[str, str] = {
-    'len': 'Get length of sequence',
-    'sum': 'Sum elements of sequence', 
-    'abs': 'Absolute value',
-    'startswith': 'Check if string starts with substring',
-    'endswith': 'Check if string ends with substring',
-    'contains': 'Check if sequence contains element'
-}
-
-
-def get_builtin_functions() -> Dict[str, Callable]:
-    """Get all built-in functions."""
-    return BUILTIN_FUNCTIONS.copy()
-
-
-def get_builtin_function_descriptions() -> Dict[str, str]:
-    """Get descriptions of all built-in functions."""
-    return BUILTIN_FUNCTION_DESCRIPTIONS.copy() 
+        # If container doesn't support 'in' operator
+        return False 

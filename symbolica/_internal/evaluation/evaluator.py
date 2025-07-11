@@ -50,19 +50,13 @@ class ASTEvaluator(ConditionEvaluator):
         """Register a custom function across all components."""
         # Validate function registration
         if not callable(func):
-            from ...core.infrastructure.exceptions import FunctionError
+            from ...core.exceptions import FunctionError
             raise FunctionError(f"Function must be callable", function_name=name)
         
-        if not name.isidentifier():
-            from ...core.infrastructure.exceptions import ValidationError
-            raise ValidationError(f"Function name must be a valid identifier", value=name)
-        
-        reserved_words = {'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is',
-                         'true', 'false', 'null', 'len', 'sum', 'startswith', 
-                         'endswith', 'contains', 'abs'}
-        if name in reserved_words:
-            from ...core.infrastructure.exceptions import ValidationError
-            raise ValidationError(f"Function name is reserved", value=name)
+        # Use centralized validation from IdentifierValidator
+        from ...core.validation.identifier_validator import IdentifierValidator
+        identifier_validator = IdentifierValidator()
+        identifier_validator.validate_identifier(name, f"Function name '{name}'")
         
         # Register with all components
         self._core.register_function(name, func)

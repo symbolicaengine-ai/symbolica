@@ -13,14 +13,14 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
-from .infrastructure.exceptions import (
+from .exceptions import (
     ValidationError, ExecutionError, EvaluationError, 
     DAGError, ConfigurationError, ErrorCollector, FunctionError
 )
-from .infrastructure.loader import RuleLoader
-from .infrastructure.function_registry import FunctionRegistry
-from .infrastructure.validation_service import ValidationService
-from .infrastructure.temporal_service import TemporalService
+from .services.loader import RuleLoader
+from .services.function_registry import FunctionRegistry
+from .validation.validation_service import ValidationService
+from .services.temporal_service import TemporalService
 from .._internal.evaluation.evaluator import ASTEvaluator
 from .._internal.strategies.dag import DAGStrategy
 from .._internal.strategies.backward_chainer import BackwardChainer
@@ -71,7 +71,7 @@ class Engine:
         
         # Initialize execution components
         self._evaluator = ASTEvaluator()
-        self._executor = self._evaluator  # Backward compatibility alias
+        self._executor = self._evaluator
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
         
@@ -84,12 +84,17 @@ class Engine:
     
     def _setup_functions(self) -> None:
         """Set up function registrations."""
-        # Register temporal functions
+        # Register temporal functions (these are system functions, bypass normal validation)
         self._temporal_service.register_temporal_functions(self._function_registry)
         
-        # Connect function registry to evaluator
+        # Connect function registry to evaluator (system functions need special handling)
         for name, func in self._function_registry._functions.items():
-            self._evaluator.register_function(name, func)
+            # System functions bypass normal validation in evaluator too
+            self._evaluator._core.register_function(name, func)
+            self._evaluator._trace_evaluator.register_function(name, func)
+            self._evaluator._execution_path_evaluator.register_function(name, func)
+            # Update field extractor
+            self._evaluator._update_function_registry()
     
     def _is_expression(self, value: Any) -> bool:
         """Detect if a value should be treated as an expression to evaluate.
@@ -200,14 +205,24 @@ class Engine:
             func: Callable function (lambda recommended for safety)
             allow_unsafe: If True, allows full functions (use with caution)
         """
+        # Register with function registry (this validates against reserved keywords)
         self._function_registry.register_function(name, func, allow_unsafe)
-        # Also register with evaluator
-        self._evaluator.register_function(name, func)
+        # Also register with evaluator components directly (validation already done)
+        self._evaluator._core.register_function(name, func)
+        self._evaluator._trace_evaluator.register_function(name, func)
+        self._evaluator._execution_path_evaluator.register_function(name, func)
+        # Update field extractor
+        self._evaluator._update_function_registry()
     
     def unregister_function(self, name: str) -> None:
         """Remove a registered custom function."""
         self._function_registry.unregister_function(name)
-        self._evaluator.unregister_function(name)
+        # Also unregister from evaluator components
+        self._evaluator._core.unregister_function(name)
+        self._evaluator._trace_evaluator.unregister_function(name)
+        self._evaluator._execution_path_evaluator.unregister_function(name)
+        # Update field extractor
+        self._evaluator._update_function_registry()
     
     def list_functions(self) -> Dict[str, str]:
         """List all available functions (built-in + custom + temporal)."""
@@ -220,7 +235,7 @@ class Engine:
             'endswith': 'Check if string ends with substring',
             'contains': 'Check if sequence contains element'
         }
-        custom_functions = self._function_registry.list_functions()
+        custom_functions = self._function_registry.list_functions_with_descriptions()
         return {**builtin_functions, **custom_functions}
     
     # Temporal Operations (delegated to TemporalService)

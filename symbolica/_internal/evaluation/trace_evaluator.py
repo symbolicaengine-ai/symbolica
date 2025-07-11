@@ -2,14 +2,15 @@
 Trace Evaluator
 ===============
 
-Wrapper around CoreEvaluator that adds simple tracing functionality.
+Wrapper around CoreEvaluator that adds simple tracing.
 Extracted from evaluator.py to follow Single Responsibility Principle.
 """
 
-from typing import Any, Dict, TYPE_CHECKING
+import ast
 from dataclasses import dataclass
+from typing import Any, Dict, TYPE_CHECKING
 from .core_evaluator import CoreEvaluator
-from ...core.infrastructure.exceptions import EvaluationError, FunctionError, ValidationError
+from ...core.exceptions import EvaluationError, FunctionError, ValidationError
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
@@ -23,21 +24,12 @@ class ConditionTrace:
     field_values: Dict[str, Any]
     
     def explain(self) -> str:
-        """Generate human-readable explanation."""
-        if not self.field_values:
-            return f"Expression '{self.expression}' = {self.result}"
-        
-        # Find a representative field to mention
-        field_explanations = []
-        for field, value in self.field_values.items():
-            if value is not None:
-                field_explanations.append(f"Field '{field}' = {value}")
-        
-        if field_explanations:
-            # Just use the first field for simplicity
-            return field_explanations[0]
+        """Generate human-readable explanation of evaluation."""
+        if self.field_values:
+            field_items = [f"{k}={v}" for k, v in self.field_values.items()]
+            return f"condition '{self.expression}' evaluated to {self.result} with {', '.join(field_items)}"
         else:
-            return f"Expression '{self.expression}' = {self.result}"
+            return f"condition '{self.expression}' evaluated to {self.result}"
 
 
 class TraceEvaluator:

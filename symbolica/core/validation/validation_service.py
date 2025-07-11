@@ -6,9 +6,9 @@ Handles rule validation logic including duplicate checking and chaining validati
 Separated from Engine to follow Single Responsibility Principle.
 """
 
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Any
 from ..models import Rule
-from .exceptions import ValidationError
+from ..exceptions import ValidationError
 
 
 class ValidationService:
@@ -190,95 +190,93 @@ class ValidationService:
                         f"Circular dependency detected in rule chaining involving rule '{rule.id}'"
                     )
     
-    def get_dependency_analysis(self, rules: List[Rule]) -> Dict[str, any]:
-        """Analyze rule dependencies and provide statistics.
+    def get_dependency_analysis(self, rules: List[Rule]) -> Dict[str, Any]:
+        """Get dependency analysis for rules.
         
         Args:
             rules: List of rules to analyze
             
         Returns:
-            Dictionary with dependency analysis
+            Dictionary containing dependency analysis
         """
         if not rules:
             return {
                 'total_rules': 0,
-                'rules_with_triggers': 0,
-                'total_trigger_relationships': 0,
-                'max_trigger_depth': 0,
-                'isolated_rules': 0
+                'chaining_rules': 0,
+                'max_chain_length': 0,
+                'circular_dependencies': []
             }
         
-        # Build trigger graph
-        trigger_graph = {}
-        reverse_graph = {}  # Who triggers this rule
+        # Count rules with triggers
+        chaining_rules = sum(1 for rule in rules if rule.triggers)
         
+        # Find max chain length
+        max_chain_length = 0
         for rule in rules:
-            trigger_graph[rule.id] = rule.triggers.copy()
-            reverse_graph[rule.id] = []
+            chain_length = self._find_chain_length(rule, rules, set())
+            max_chain_length = max(max_chain_length, chain_length)
         
-        for rule in rules:
-            for triggered_id in rule.triggers:
-                if triggered_id in reverse_graph:
-                    reverse_graph[triggered_id].append(rule.id)
-        
-        # Calculate statistics
-        rules_with_triggers = sum(1 for rule in rules if rule.triggers)
-        total_relationships = sum(len(rule.triggers) for rule in rules)
-        
-        # Find isolated rules (neither trigger nor are triggered)
-        isolated_rules = []
-        for rule in rules:
-            if not rule.triggers and not reverse_graph[rule.id]:
-                isolated_rules.append(rule.id)
-        
-        # Calculate max trigger depth using O(n) topological approach
-        max_depth = self._calculate_max_trigger_depth_optimized(trigger_graph)
+        # Check for circular dependencies (non-raising version)
+        circular_deps = self._find_circular_dependencies(rules)
         
         return {
             'total_rules': len(rules),
-            'rules_with_triggers': rules_with_triggers,
-            'total_trigger_relationships': total_relationships,
-            'max_trigger_depth': max_depth,
-            'isolated_rules': len(isolated_rules),
-            'isolated_rule_ids': isolated_rules
+            'chaining_rules': chaining_rules,
+            'max_chain_length': max_chain_length,
+            'circular_dependencies': circular_deps
         }
     
-    def _calculate_max_trigger_depth_optimized(self, graph: Dict[str, List[str]]) -> int:
-        """Calculate maximum trigger depth using O(n) topological sort approach.
+    def _find_chain_length(self, rule: Rule, all_rules: List[Rule], visited: Set[str]) -> int:
+        """Find the maximum chain length starting from a rule."""
+        if rule.id in visited:
+            return 0  # Circular reference or already counted
         
-        Args:
-            graph: Trigger graph
+        if not rule.triggers:
+            return 1  # End of chain
+        
+        visited.add(rule.id)
+        max_length = 1
+        
+        for trigger_id in rule.triggers:
+            triggered_rule = next((r for r in all_rules if r.id == trigger_id), None)
+            if triggered_rule:
+                length = 1 + self._find_chain_length(triggered_rule, all_rules, visited.copy())
+                max_length = max(max_length, length)
+        
+        return max_length
+    
+    def _find_circular_dependencies(self, rules: List[Rule]) -> List[str]:
+        """Find circular dependencies without raising exceptions."""
+        circular_deps = []
+        
+        # Build adjacency list
+        graph: Dict[str, List[str]] = {}
+        for rule in rules:
+            graph[rule.id] = rule.triggers.copy()
+        
+        # Three-color DFS
+        color = {rule.id: 0 for rule in rules}
+        
+        def dfs(node_id: str, path: List[str]) -> None:
+            if color[node_id] == 1:  # GRAY - cycle found
+                cycle_start = path.index(node_id)
+                cycle = path[cycle_start:] + [node_id]
+                circular_deps.append(" -> ".join(cycle))
+                return
+            if color[node_id] == 2:  # BLACK - already processed
+                return
             
-        Returns:
-            Maximum depth
-        """
-        if not graph:
-            return 0
-        
-        # Calculate in-degrees for topological sort
-        in_degree = {node: 0 for node in graph}
-        for node in graph:
-            for neighbor in graph[node]:
-                if neighbor in in_degree:
-                    in_degree[neighbor] += 1
-        
-        # Initialize depths and queue with nodes having no incoming edges
-        depths = {node: 0 for node in graph}
-        queue = [node for node in graph if in_degree[node] == 0]
-        
-        # Process nodes in topological order
-        while queue:
-            current = queue.pop(0)
+            color[node_id] = 1  # Mark as GRAY
+            path.append(node_id)
             
-            # Update depths of all neighbors
-            for neighbor in graph[current]:
-                if neighbor in depths:
-                    depths[neighbor] = max(depths[neighbor], depths[current] + 1)
-                    in_degree[neighbor] -= 1
-                    
-                    # Add to queue when all dependencies processed
-                    if in_degree[neighbor] == 0:
-                        queue.append(neighbor)
+            for neighbor in graph.get(node_id, []):
+                if neighbor in color:
+                    dfs(neighbor, path.copy())
+            
+            color[node_id] = 2  # Mark as BLACK
         
-        # Return maximum depth found
-        return max(depths.values()) if depths else 0 
+        for rule in rules:
+            if color[rule.id] == 0:
+                dfs(rule.id, [])
+        
+        return circular_deps 

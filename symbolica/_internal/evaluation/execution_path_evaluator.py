@@ -11,7 +11,7 @@ import time
 from typing import Any, TYPE_CHECKING
 from .core_evaluator import CoreEvaluator
 from .execution_path import ExecutionPathBuilder, ExecutionPath, OperationType
-from ...core.infrastructure.exceptions import EvaluationError, FunctionError, ValidationError
+from ...core.exceptions import EvaluationError, FunctionError, ValidationError
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
@@ -89,35 +89,36 @@ class ExecutionPathEvaluator:
     
     def _eval_bool_op_with_path(self, node: ast.BoolOp, context: 'ExecutionContext', builder: ExecutionPathBuilder) -> Any:
         """Handle boolean operations with execution path tracking."""
-        operation = OperationType.BOOLEAN_AND if isinstance(node.op, ast.And) else OperationType.BOOLEAN_OR
         step_start = time.perf_counter()
         
-        # Start tracking this operation
-        step_id = builder.start_operation(operation, "boolean_operation")
-        
-        operand_results = []
-        
         if isinstance(node.op, ast.And):
+            step_id = builder.start_operation(OperationType.BOOLEAN_AND, "and")
             result = True
+            evaluated_values = []
+            
             for value_node in node.values:
                 val = self._eval_node_with_path(value_node, context, builder)
-                operand_results.append(bool(val))
+                evaluated_values.append(val)
                 if not val:
                     result = False
                     break  # Short circuit for AND
         else:  # OR
+            step_id = builder.start_operation(OperationType.BOOLEAN_OR, "or")
             result = False
+            evaluated_values = []
+            
             for value_node in node.values:
                 val = self._eval_node_with_path(value_node, context, builder)
-                operand_results.append(bool(val))
+                evaluated_values.append(val)
                 if val:
                     result = True
                     break  # Short circuit for OR
         
-        # Finish tracking
         step_time = (time.perf_counter() - step_start) * 1000
         builder.finish_operation(step_id, result, {
-            'child_results': operand_results
+            'operator': 'and' if isinstance(node.op, ast.And) else 'or',
+            'operand_values': evaluated_values,
+            'short_circuited': len(evaluated_values) < len(node.values)
         }, step_time)
         
         return result
@@ -125,45 +126,54 @@ class ExecutionPathEvaluator:
     def _eval_compare_with_path(self, node: ast.Compare, context: 'ExecutionContext', builder: ExecutionPathBuilder) -> Any:
         """Handle comparison operations with execution path tracking."""
         step_start = time.perf_counter()
-        
-        # Start tracking comparison
         step_id = builder.start_operation(OperationType.COMPARISON, "comparison")
         
         left = self._eval_node_with_path(node.left, context, builder)
         
-        # Handle single comparison (most common case)
-        if len(node.ops) == 1 and len(node.comparators) == 1:
-            op = node.ops[0]
-            right = self._eval_node_with_path(node.comparators[0], context, builder)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = self._eval_node_with_path(comparator, context, builder)
             
-            result = self._core._compare(left, op, right)
-            op_str = self._get_operator_string(op)
-            
-            # Finish tracking
-            step_time = (time.perf_counter() - step_start) * 1000
-            builder.finish_operation(step_id, result, {
-                'operator': op_str,
-                'left_value': left,
-                'right_value': right
-            }, step_time)
-            
-            return result
-        else:
-            # Handle chained comparisons
-            for op, comparator in zip(node.ops, node.comparators):
-                right = self._eval_node_with_path(comparator, context, builder)
-                result = self._core._compare(left, op, right)
-                if not result:
-                    break
-                left = right
-            
-            # Finish tracking
-            step_time = (time.perf_counter() - step_start) * 1000
-            builder.finish_operation(step_id, result, {
-                'operator': 'chained'
-            }, step_time)
-            
-            return result
+            result = self._compare(left, op, right)
+            if not result:
+                break
+            left = right
+        
+        step_time = (time.perf_counter() - step_start) * 1000
+        builder.finish_operation(step_id, result, {
+            'comparison_type': type(node.ops[0]).__name__ if node.ops else 'unknown',
+            'left_value': left,
+            'right_value': right if 'right' in locals() else None
+        }, step_time)
+        
+        return result
+    
+    def _compare(self, left: Any, op: ast.cmpop, right: Any) -> bool:
+        """Perform comparison operation."""
+        try:
+            if isinstance(op, ast.Eq):
+                return left == right
+            elif isinstance(op, ast.NotEq):
+                return left != right
+            elif isinstance(op, ast.Lt):
+                return left < right
+            elif isinstance(op, ast.LtE):
+                return left <= right
+            elif isinstance(op, ast.Gt):
+                return left > right
+            elif isinstance(op, ast.GtE):
+                return left >= right
+            elif isinstance(op, ast.In):
+                return left in right
+            elif isinstance(op, ast.NotIn):
+                return left not in right
+            elif isinstance(op, ast.Is):
+                return left is right
+            elif isinstance(op, ast.IsNot):
+                return left is not right
+            else:
+                raise EvaluationError(f"Unsupported comparison operator: {type(op).__name__}")
+        except TypeError as e:
+            raise EvaluationError(f"Type error in comparison: {e}")
     
     def _eval_call_with_path(self, node: ast.Call, context: 'ExecutionContext', builder: ExecutionPathBuilder) -> Any:
         """Handle function calls with execution path tracking."""
@@ -195,19 +205,9 @@ class ExecutionPathEvaluator:
             else:
                 raise EvaluationError(f"Unknown function: {func_name}")
         except Exception as e:
-            error = str(e)
             result = None
-            function_type = "custom" if func_name in self._core._custom_functions else "builtin"
-            
-            # Finish tracking with error
-            step_time = (time.perf_counter() - step_start) * 1000
-            builder.finish_operation(step_id, None, {
-                'function_name': func_name,
-                'arguments': args,
-                'function_type': function_type,
-                'error': error
-            }, step_time)
-            
+            function_type = "unknown"
+            error = str(e)
             if func_name in self._core._custom_functions:
                 raise FunctionError(
                     f"Error in custom function: {str(e)}", 
@@ -216,14 +216,14 @@ class ExecutionPathEvaluator:
                     original_error=e
                 )
             else:
-                raise EvaluationError(f"Function {func_name} failed: {error}")
+                raise EvaluationError(f"Function {func_name} failed: {str(e)}")
         
-        # Finish tracking
         step_time = (time.perf_counter() - step_start) * 1000
         builder.finish_operation(step_id, result, {
             'function_name': func_name,
+            'function_type': function_type,
             'arguments': args,
-            'function_type': function_type
+            'error': error
         }, step_time)
         
         return result
@@ -325,22 +325,8 @@ class ExecutionPathEvaluator:
         slice_val = self._eval_node_with_path(node.slice, context, builder)
         
         try:
-            return value[slice_val]
+            result = value[slice_val]
         except (IndexError, KeyError, TypeError) as e:
             raise EvaluationError(f"Subscript error: {e}")
-    
-    def _get_operator_string(self, op: ast.cmpop) -> str:
-        """Convert AST comparison operator to string."""
-        op_map = {
-            ast.Eq: "==",
-            ast.NotEq: "!=",
-            ast.Lt: "<",
-            ast.LtE: "<=",
-            ast.Gt: ">",
-            ast.GtE: ">=",
-            ast.In: "in",
-            ast.NotIn: "not in",
-            ast.Is: "is",
-            ast.IsNot: "is not"
-        }
-        return op_map.get(type(op), str(type(op).__name__)) 
+        
+        return result 

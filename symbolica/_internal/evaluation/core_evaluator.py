@@ -8,12 +8,85 @@ Extracted from evaluator.py to follow Single Responsibility Principle.
 """
 
 import ast
-from typing import Any, Dict, Tuple, Callable, TYPE_CHECKING
-from ...core.infrastructure.exceptions import EvaluationError, FunctionError
+import signal
+from contextlib import contextmanager
+from functools import lru_cache
+from typing import Any, Dict, Tuple, Callable, TYPE_CHECKING, Set, Type
+from ...core.exceptions import EvaluationError, FunctionError, SecurityError
+from ...core.config.system_config import SystemConfig
 from .builtin_functions import get_builtin_functions
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
+
+
+# Whitelist of safe AST node types
+SAFE_NODE_TYPES: Set[Type[ast.AST]] = {
+    ast.Expression,  # Root node for eval mode
+    ast.BoolOp,      # and, or
+    ast.Compare,     # ==, !=, <, >, etc.
+    ast.UnaryOp,     # not, +, -
+    ast.BinOp,       # +, -, *, /, etc.
+    ast.Call,        # Function calls (restricted to registered functions)
+    ast.Name,        # Variable/field access
+    ast.Constant,    # Literals
+    ast.List,        # List literals
+    ast.Subscript,   # Indexing operations
+    # Boolean operators
+    ast.And, ast.Or, ast.Not,
+    # Comparison operators  
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.In, ast.NotIn, ast.Is, ast.IsNot,
+    # Arithmetic operators
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.UAdd, ast.USub,
+    # Expression contexts (safe, just specify how variables are accessed)
+    ast.Load, ast.Store, ast.Del
+}
+
+# Use configuration for all limits
+MAX_EVALUATION_TIME = SystemConfig.DEFAULT_TIMEOUT_SECONDS
+MAX_RECURSION_DEPTH = SystemConfig.MAX_RULE_DEPTH  
+EXPRESSION_CACHE_SIZE = SystemConfig.CACHE_SIZE_LIMIT
+MAX_EXPRESSION_LENGTH = SystemConfig.MAX_CONDITION_LENGTH
+
+
+@lru_cache(maxsize=EXPRESSION_CACHE_SIZE)
+def _parse_and_validate_expression(expression: str) -> ast.AST:
+    """Parse and validate expression with caching."""
+    try:
+        tree = ast.parse(expression.strip(), mode='eval')
+        _validate_ast_security_static(tree)
+        return tree
+    except SyntaxError as e:
+        raise EvaluationError(
+            f"Invalid syntax in condition", 
+            expression=expression,
+            field_values={'syntax_error': str(e)}
+        )
+
+
+def _validate_ast_security_static(tree: ast.AST) -> None:
+    """Static version of AST security validation for caching."""
+    for node in ast.walk(tree):
+        if type(node) not in SAFE_NODE_TYPES:
+            raise SecurityError(f"Unsafe AST node type: {type(node).__name__}")
+
+
+@contextmanager
+def evaluation_timeout(seconds: int):
+    """Context manager to limit evaluation time."""
+    def timeout_handler(signum, frame):
+        raise SecurityError(f"Expression evaluation timeout after {seconds} seconds")
+    
+    # Set the alarm
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(seconds)
+    
+    try:
+        yield
+    finally:
+        # Restore the old alarm handler
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 class CoreEvaluator:
@@ -23,6 +96,7 @@ class CoreEvaluator:
         """Initialize core evaluator with built-in functions."""
         self._builtin_functions = get_builtin_functions()
         self._custom_functions: Dict[str, Callable] = {}
+        self._recursion_depth = 0
     
     def register_function(self, name: str, func: Callable) -> None:
         """Register a custom function."""
@@ -35,14 +109,20 @@ class CoreEvaluator:
     def evaluate(self, condition_expr: str, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
         """Evaluate condition expression and return result with field values."""
         try:
-            tree = ast.parse(condition_expr.strip(), mode='eval')
-            return self._eval_node(tree.body, context)
-        except SyntaxError as e:
-            raise EvaluationError(
-                f"Invalid syntax in condition", 
-                expression=condition_expr,
-                field_values={'syntax_error': str(e)}
-            )
+            # Basic input validation
+            if len(condition_expr.strip()) > MAX_EXPRESSION_LENGTH:
+                raise SecurityError(f"Expression too long (max {MAX_EXPRESSION_LENGTH} characters)")
+            
+            # Parse and validate AST (with caching)
+            tree = _parse_and_validate_expression(condition_expr)
+            
+            # Evaluate with timeout protection
+            with evaluation_timeout(MAX_EVALUATION_TIME):
+                self._recursion_depth = 0
+                return self._eval_node(tree.body, context)
+                
+        except SecurityError:
+            raise  # Re-raise security errors as-is
         except Exception as e:
             raise EvaluationError(
                 f"Unexpected evaluation error: {str(e)}", 
@@ -51,24 +131,32 @@ class CoreEvaluator:
     
     def _eval_node(self, node, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
         """Evaluate AST node and return result with field values."""
-        # Dispatch to specialized handlers
-        node_handlers = {
-            ast.BoolOp: self._eval_bool_op,
-            ast.Compare: self._eval_compare,
-            ast.UnaryOp: self._eval_unary_op,
-            ast.BinOp: self._eval_bin_op,
-            ast.Call: self._eval_call,
-            ast.Name: self._eval_name,
-            ast.Constant: self._eval_constant,
-            ast.List: self._eval_list,
-            ast.Subscript: self._eval_subscript
-        }
+        # Check recursion depth
+        self._recursion_depth += 1
+        if self._recursion_depth > MAX_RECURSION_DEPTH:
+            raise SecurityError(f"Maximum recursion depth exceeded ({MAX_RECURSION_DEPTH})")
         
-        handler = node_handlers.get(type(node))
-        if handler:
-            return handler(node, context)
-        
-        raise EvaluationError(f"Unsupported AST node: {type(node).__name__}")
+        try:
+            # Dispatch to specialized handlers
+            node_handlers = {
+                ast.BoolOp: self._eval_bool_op,
+                ast.Compare: self._eval_compare,
+                ast.UnaryOp: self._eval_unary_op,
+                ast.BinOp: self._eval_bin_op,
+                ast.Call: self._eval_call,
+                ast.Name: self._eval_name,
+                ast.Constant: self._eval_constant,
+                ast.List: self._eval_list,
+                ast.Subscript: self._eval_subscript
+            }
+            
+            handler = node_handlers.get(type(node))
+            if handler:
+                return handler(node, context)
+            
+            raise EvaluationError(f"Unsupported AST node: {type(node).__name__}")
+        finally:
+            self._recursion_depth -= 1
     
     def _eval_bool_op(self, node: ast.BoolOp, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
         """Handle boolean operations (and, or)."""

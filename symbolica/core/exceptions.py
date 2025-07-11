@@ -66,13 +66,16 @@ class ValidationError(SymbolicaError):
         self.value = value
     
     def __str__(self) -> str:
-        parts = ["Validation error"]
+        parts = []
         if self.rule_id:
             parts.append(f"in rule '{self.rule_id}'")
         if self.field:
             parts.append(f"for field '{self.field}'")
-        parts.append(f": {self.message}")
-        return " ".join(parts)
+        
+        if parts:
+            return f"{' '.join(parts)}: {self.message}"
+        else:
+            return self.message
 
 
 class ExecutionError(SymbolicaError):
@@ -160,6 +163,19 @@ class FunctionError(SymbolicaError):
         self.function_name = function_name
         self.args = args
         self.original_error = original_error
+
+
+class SecurityError(EvaluationError):
+    """Raised when expression violates security constraints."""
+    
+    def __init__(self, message: str, expression: Optional[str] = None, 
+                 rule_id: Optional[str] = None, violation_type: Optional[str] = None):
+        context = {}
+        if violation_type:
+            context['violation_type'] = violation_type
+            
+        super().__init__(message, expression=expression, rule_id=rule_id, field_values=context)
+        self.violation_type = violation_type
 
 
 class DAGError(SymbolicaError):
