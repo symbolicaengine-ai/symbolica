@@ -176,37 +176,99 @@ class Engine:
         
         # Additional checks to avoid false positives
         # Skip if it's clearly a sentence (multiple words with spaces and no operators)
-        if ' ' in value and not any(op in value for op in arithmetic_ops + comparison_ops + logical_ops) and not has_parentheses:
+        # BUT don't exclude template expressions even if they have spaces
+        if (' ' in value and 
+            not any(op in value for op in arithmetic_ops + comparison_ops + logical_ops) and 
+            not has_parentheses and 
+            not has_templates):  # Don't exclude templates!
             return False
         
         # Skip if it looks like a URL, file path, or other string literal
-        if any(pattern in value.lower() for pattern in ['http://', 'https://', '\\', '/', '.com', '.org']):
+        # Don't exclude template expressions or arithmetic expressions
+        if (any(pattern in value.lower() for pattern in ['http://', 'https://', '\\\\', '.com', '.org']) or 
+            ('/' in value and not has_templates and not has_arithmetic and ' ' not in value)):
             return False
         
         return is_likely_expression
     
     def _evaluate_action_value(self, value: Any, context: ExecutionContext) -> Any:
-        """Evaluate an action value, computing expressions as numbers.
+        """Evaluate an action value, handling both templates and expressions.
         
         Args:
             value: Raw action value from rule
             context: Current execution context
             
         Returns:
-            Evaluated value (computed if expression, original if literal)
+            Evaluated value (computed if expression/template, original if literal)
         """
         # Only attempt evaluation for potential expressions
         if not self._is_expression(value):
             return value
         
         try:
-            # Use the same evaluator as conditions
-            result, _ = self._evaluator._core.evaluate(str(value), context)
-            return result
+            value_str = str(value)
+            
+            # Handle template expressions like {{ variable }} or {{ expression }}
+            if '{{' in value_str and '}}' in value_str:
+                return self._evaluate_template_expression(value_str, context)
+            
+            # Handle direct expressions (arithmetic, comparisons, function calls)
+            else:
+                result, _ = self._evaluator._core.evaluate(value_str, context)
+                return result
+                
         except Exception:
             # If evaluation fails, return original value
             # This ensures backward compatibility
             return value
+    
+    def _evaluate_template_expression(self, template: str, context: ExecutionContext) -> Any:
+        """Evaluate template expressions with variable substitution.
+        
+        Args:
+            template: Template string with {{ variable }} syntax
+            context: Current execution context
+            
+        Returns:
+            Evaluated template result
+        """
+        import re
+        
+        # Pattern to match {{ expression }} - use non-greedy match to handle nested braces
+        template_pattern = r'\{\{\s*(.*?)\s*\}\}'
+        
+        # Find all template expressions
+        matches = list(re.finditer(template_pattern, template))
+        
+        if not matches:
+            # No template expressions found, return as-is
+            return template
+        
+        # If the entire string is a single template expression, evaluate and return the result
+        if len(matches) == 1 and matches[0].group(0).strip() == template.strip():
+            expression = matches[0].group(1).strip()
+            try:
+                # Use the core evaluator which properly handles PROMPT function
+                result, _ = self._evaluator._core.evaluate(expression, context)
+                return result
+            except Exception:
+                # If evaluation fails, return the expression itself
+                return expression
+        
+        # Multiple templates or mixed content - perform string substitution
+        result = template
+        for match in reversed(matches):  # Process in reverse to maintain positions
+            expression = match.group(1).strip()
+            try:
+                # Use the core evaluator which properly handles PROMPT function
+                eval_result, _ = self._evaluator._core.evaluate(expression, context)
+                # Convert result to string for substitution
+                result = result[:match.start()] + str(eval_result) + result[match.end():]
+            except Exception:
+                # If evaluation fails, substitute with the expression itself
+                result = result[:match.start()] + expression + result[match.end():]
+        
+        return result
     
     # Rule Loading Methods (delegated to RuleLoader)
     @classmethod
@@ -260,19 +322,9 @@ class Engine:
     
     def list_functions(self) -> Dict[str, str]:
         """List all available functions (built-in + custom + temporal + LLM)."""
-        # Combine built-in functions from evaluator with custom functions
-        builtin_functions = {
-            'len': 'Get length of sequence',
-            'sum': 'Sum elements of sequence', 
-            'abs': 'Absolute value',
-            'startswith': 'Check if string starts with substring',
-            'endswith': 'Check if string ends with substring',
-            'contains': 'Check if sequence contains element'
-        }
-        
-        # Add LLM functions if available
-        if self._prompt_evaluator:
-            builtin_functions['PROMPT'] = 'Execute LLM prompt with variable substitution and type conversion'
+        # Get built-in functions from the evaluator's actual function list
+        from .._internal.evaluation.builtin_functions import get_builtin_function_descriptions
+        builtin_functions = get_builtin_function_descriptions(include_llm=bool(self._prompt_evaluator))
         
         custom_functions = self._function_registry.list_functions_with_descriptions()
         return {**builtin_functions, **custom_functions}
