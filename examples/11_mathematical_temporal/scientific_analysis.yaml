@@ -1,0 +1,27 @@
+rules:
+  - id: temperature_monitoring_system
+    priority: 100
+    condition: "sensor_id is not None and current_temp is not None"
+    actions:
+      # Mathematical analysis
+      temp_celsius: "current_temp"
+      temp_fahrenheit: "(current_temp * 9/5) + 32"
+      temp_kelvin: "current_temp + 273.15"
+      
+      # Thermal analysis calculations
+      thermal_expansion: "current_temp * expansion_coefficient * original_length"
+      heat_capacity_joules: "material_mass * specific_heat * abs(current_temp - reference_temp)"
+      thermal_stress_factor: "abs(current_temp - reference_temp) * material_stress_coefficient"
+      
+      # Status determination
+      is_critical_high: "current_temp > critical_temp"
+      is_critical_low: "current_temp < min_safe_temp"
+      is_normal_range: "current_temp >= min_safe_temp and current_temp <= critical_temp"
+      
+      # System status determination
+      system_status: "'CRITICAL_HIGH' if current_temp > critical_temp else 'CRITICAL_LOW' if current_temp < min_safe_temp else 'NORMAL'"
+      alert_level: "3 if current_temp > critical_temp or current_temp < min_safe_temp else 1"
+      
+      # Simple monitoring report
+      temperature_analysis: "'Temperature monitoring complete'"
+    tags: ["monitoring", "mathematical", "thermal"] 

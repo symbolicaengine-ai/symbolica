@@ -1,0 +1,128 @@
+rules:
+  - id: manufacturing_quality_control
+    priority: 100
+    condition: "recent_count('process_temperature', 300) > 10"
+    description: "Monitor manufacturing process temperature for quality control"
+    actions:
+      qc_avg_temperature: "{{ recent_avg('process_temperature', 300) }}"
+      qc_temperature_range: "{{ recent_max('process_temperature', 300) - recent_min('process_temperature', 300) }}"
+      qc_temperature_stability: "{{ 100 - (qc_temperature_range * 10) if qc_temperature_range < 10 else 0 }}"
+      qc_deviation_from_target: "{{ abs(qc_avg_temperature - target_temperature) }}"
+      qc_within_tolerance: "{{ qc_deviation_from_target <= tolerance }}"
+      qc_process_capability: "{{ tolerance / (qc_temperature_range / 6) if qc_temperature_range > 0 else 10 }}"
+      qc_status: "{{ 'PASS' if qc_within_tolerance and qc_temperature_stability > 70 else 'REVIEW' if qc_within_tolerance else 'FAIL' }}"
+      qc_yield_estimate: "{{ 98 if qc_status == 'PASS' else 85 if qc_status == 'REVIEW' else 60 }}"
+
+  - id: temperature_trend_analysis
+    priority: 90
+    condition: "recent_count('process_temperature', 600) > 20"
+    description: "Analyze temperature trends for process optimization"
+    actions:
+      trend_short_term: "{{ recent_avg('process_temperature', 180) }}"
+      trend_long_term: "{{ recent_avg('process_temperature', 600) }}"
+      trend_direction: "{{ 'RISING' if trend_short_term > trend_long_term + 1 else 'FALLING' if trend_short_term < trend_long_term - 1 else 'STABLE' }}"
+      trend_rate: "{{ abs(trend_short_term - trend_long_term) * 20 }}"
+      trend_prediction: "{{ trend_short_term + (trend_short_term - trend_long_term) * 2 }}"
+
+  - id: financial_risk_monitoring
+    priority: 100
+    condition: "recent_count('portfolio_value', 3600) > 15"
+    description: "Monitor portfolio volatility and financial risk metrics"
+    actions:
+      risk_current_value: "{{ recent_avg('portfolio_value', 300) }}"
+      risk_daily_high: "{{ recent_max('portfolio_value', 86400) }}"
+      risk_daily_low: "{{ recent_min('portfolio_value', 86400) }}"
+      risk_volatility: "{{ (risk_daily_high - risk_daily_low) / risk_current_value * 100 if risk_current_value > 0 else 0 }}"
+      risk_level: "{{ 'HIGH' if risk_volatility > 8 else 'MEDIUM' if risk_volatility > 4 else 'LOW' }}"
+      risk_value_at_risk: "{{ risk_current_value * 0.05 if risk_level == 'HIGH' else risk_current_value * 0.03 if risk_level == 'MEDIUM' else risk_current_value * 0.01 }}"
+      risk_drawdown: "{{ (risk_daily_high - risk_current_value) / risk_daily_high * 100 if risk_daily_high > 0 else 0 }}"
+
+  - id: portfolio_performance_analysis
+    priority: 90
+    condition: "recent_count('portfolio_value', 7200) > 25 and initial_value != None"
+    description: "Analyze portfolio performance metrics and returns"
+    actions:
+      portfolio_current_value: "{{ recent_avg('portfolio_value', 300) }}"
+      portfolio_return_percent: "{{ (portfolio_current_value - initial_value) / initial_value * 100 if initial_value > 0 else 0 }}"
+      portfolio_annualized_return: "{{ portfolio_return_percent * 365 / (recent_count('portfolio_value', 86400) / 288) if recent_count('portfolio_value', 86400) > 288 else portfolio_return_percent }}"
+      portfolio_sharpe_estimate: "{{ portfolio_annualized_return / (risk_volatility * 16) if risk_volatility > 0 else 0 }}"
+      portfolio_recommendation: "{{ 'HOLD' if abs(portfolio_return_percent) < 5 else 'REBALANCE' if risk_level == 'HIGH' else 'MONITOR' }}"
+
+  - id: infrastructure_monitoring
+    priority: 100
+    condition: "recent_count('cpu_utilization', 300) > 10"
+    description: "Monitor server infrastructure performance and health"
+    actions:
+      system_cpu_avg: "{{ recent_avg('cpu_utilization', 300) }}"
+      system_cpu_peak: "{{ recent_max('cpu_utilization', 300) }}"
+      system_memory_avg: "{{ recent_avg('memory_usage', 300) if recent_count('memory_usage', 300) > 0 else 0 }}"
+      system_response_avg: "{{ recent_avg('response_time', 300) if recent_count('response_time', 300) > 0 else 0 }}"
+      system_cpu_sustained_high: "{{ sustained_above('cpu_utilization', max_cpu_threshold, 180) }}"
+      system_memory_trending_up: "{{ recent_avg('memory_usage', 180) > recent_avg('memory_usage', 600) + 5 if recent_count('memory_usage', 600) > 10 else False }}"
+      system_health_score: "{{ 100 - (system_cpu_avg + system_memory_avg) / 2 if system_cpu_avg < 90 and system_memory_avg < 90 else 0 }}"
+      system_performance_grade: "{{ 'A' if system_health_score > 80 else 'B' if system_health_score > 60 else 'C' if system_health_score > 40 else 'F' }}"
+
+  - id: infrastructure_alerting
+    priority: 110
+    condition: "recent_count('cpu_utilization', 60) > 5"
+    description: "Generate infrastructure alerts for critical conditions"
+    actions:
+      alert_cpu_critical: "{{ sustained_above('cpu_utilization', 90, 120) }}"
+      alert_memory_critical: "{{ recent_avg('memory_usage', 60) > max_memory_threshold if recent_count('memory_usage', 60) > 0 else False }}"
+      alert_response_degraded: "{{ recent_avg('response_time', 60) > max_response_time if recent_count('response_time', 60) > 0 else False }}"
+      alert_level: "{{ 'CRITICAL' if alert_cpu_critical or alert_memory_critical else 'WARNING' if alert_response_degraded else 'NORMAL' }}"
+      alert_message: "{{ 'CRITICAL: Sustained high resource usage detected' if alert_level == 'CRITICAL' else 'WARNING: Performance degradation detected' if alert_level == 'WARNING' else 'System operating normally' }}"
+
+  - id: environmental_monitoring
+    priority: 100
+    condition: "recent_count('air_quality_index', 600) > 10"
+    description: "Monitor environmental conditions and air quality"
+    actions:
+      env_aqi_avg: "{{ recent_avg('air_quality_index', 600) }}"
+      env_aqi_peak: "{{ recent_max('air_quality_index', 600) }}"
+      env_noise_avg: "{{ recent_avg('noise_level', 600) if recent_count('noise_level', 600) > 0 else 0 }}"
+      env_aqi_unhealthy_sustained: "{{ sustained_above('air_quality_index', aqi_threshold_unhealthy, 1800) }}"
+      env_noise_excessive: "{{ recent_avg('noise_level', 300) > noise_threshold_excessive if recent_count('noise_level', 300) > 0 else False }}"
+      env_air_quality_grade: "{{ 'Good' if env_aqi_avg < 50 else 'Moderate' if env_aqi_avg < 100 else 'Unhealthy for Sensitive' if env_aqi_avg < 150 else 'Unhealthy' if env_aqi_avg < 200 else 'Very Unhealthy' }}"
+      health_risk_score: "{{ env_aqi_avg / 10 + (env_noise_avg - 50) / 5 if env_noise_avg > 50 else env_aqi_avg / 10 }}"
+      health_recommendation: "{{ 'Avoid outdoor activities' if health_risk_score > 20 else 'Limit outdoor exposure' if health_risk_score > 10 else 'Normal outdoor activities safe' }}"
+
+  - id: energy_grid_analysis
+    priority: 100
+    condition: "recent_count('power_demand', 900) > 15"
+    description: "Analyze power grid load and generation capacity"
+    actions:
+      grid_current_demand: "{{ recent_avg('power_demand', 300) }}"
+      grid_peak_demand: "{{ recent_max('power_demand', 900) }}"
+      grid_current_generation: "{{ recent_avg('power_generation', 300) if recent_count('power_generation', 300) > 0 else 0 }}"
+      grid_capacity_utilization: "{{ grid_current_demand / max_capacity * 100 if max_capacity > 0 else 0 }}"
+      grid_reserve_margin_actual: "{{ (grid_current_generation - grid_current_demand) / grid_current_demand * 100 if grid_current_demand > 0 else 0 }}"
+      grid_efficiency: "{{ grid_current_generation / (grid_current_generation + 100) * 100 if grid_current_generation > 0 else 0 }}"
+      power_stress_level: "{{ 'HIGH' if grid_capacity_utilization > 85 else 'MEDIUM' if grid_capacity_utilization > 70 else 'LOW' }}"
+      power_grid_status: "{{ 'CRITICAL' if grid_reserve_margin_actual < 5 else 'WARNING' if grid_reserve_margin_actual < 10 else 'STABLE' }}"
+
+  - id: grid_demand_forecasting
+    priority: 90
+    condition: "recent_count('power_demand', 1800) > 30"
+    description: "Forecast power demand trends for grid planning"
+    actions:
+      demand_trend_1h: "{{ recent_avg('power_demand', 900) }}"
+      demand_trend_3h: "{{ recent_avg('power_demand', 1800) }}"
+      demand_growth_rate: "{{ (demand_trend_1h - demand_trend_3h) / demand_trend_3h * 100 if demand_trend_3h > 0 else 0 }}"
+      demand_forecast_6h: "{{ demand_trend_1h * (1 + demand_growth_rate / 100) ** 6 }}"
+      grid_load_balancing_needed: "{{ demand_forecast_6h > max_capacity * 0.9 }}"
+
+  - id: agricultural_monitoring
+    priority: 100
+    condition: "recent_count('soil_moisture', 1800) > 10"
+    description: "Monitor crop conditions and agricultural parameters"
+    actions:
+      crop_moisture_avg: "{{ recent_avg('soil_moisture', 1800) }}"
+      crop_moisture_min: "{{ recent_min('soil_moisture', 1800) }}"
+      crop_temperature_avg: "{{ recent_avg('ambient_temperature', 1800) if recent_count('ambient_temperature', 1800) > 0 else 0 }}"
+      crop_moisture_optimal: "{{ crop_moisture_avg >= optimal_moisture_min and crop_moisture_avg <= optimal_moisture_max }}"
+      crop_temperature_optimal: "{{ crop_temperature_avg >= optimal_temp_min and crop_temperature_avg <= optimal_temp_max }}"
+      crop_stress_indicator: "{{ (optimal_moisture_min - crop_moisture_avg) * 2 if crop_moisture_avg < optimal_moisture_min else (crop_moisture_avg - optimal_moisture_max) * 2 if crop_moisture_avg > optimal_moisture_max else 0 }}"
+      irrigation_needed: "{{ crop_moisture_avg < optimal_moisture_min * 0.9 }}"
+      irrigation_priority: "{{ 'HIGH' if crop_moisture_min < optimal_moisture_min * 0.7 else 'MEDIUM' if irrigation_needed else 'LOW' }}"
+      crop_health_score: "{{ 100 - abs(crop_stress_indicator) - abs(crop_temperature_avg - (optimal_temp_min + optimal_temp_max) / 2) * 2 }}" 
