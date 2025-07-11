@@ -21,7 +21,7 @@ def main():
     print("=" * 50)
     
     # Load rules from YAML file
-    engine = Engine.from_yaml("customer_approval.yaml")
+    engine = Engine.from_file("customer_approval.yaml")
     
     print("Loaded rules:")
     for rule in engine.rules:
@@ -37,7 +37,7 @@ def main():
     )
     
     result = engine.reason(vip_customer)
-    print(f"Input: {dict(vip_customer)}")
+    print(f"Input: {vip_customer.data}")
     print(f"Result: {result.verdict}")
     print(f"Fired rules: {result.fired_rules}")
     print(f"Execution time: {result.execution_time_ms:.2f}ms")
@@ -53,7 +53,7 @@ def main():
     )
     
     result = engine.reason(regular_customer)
-    print(f"Input: {dict(regular_customer)}")
+    print(f"Input: {regular_customer.data}")
     print(f"Result: {result.verdict}")
     print(f"Fired rules: {result.fired_rules}")
     print(f"Reasoning: {result.reasoning}")
@@ -68,7 +68,7 @@ def main():
     )
     
     result = engine.reason(risky_customer)
-    print(f"Input: {dict(risky_customer)}")
+    print(f"Input: {risky_customer.data}")
     print(f"Result: {result.verdict}")
     print(f"Fired rules: {result.fired_rules}")
     print(f"Reasoning: {result.reasoning}")
@@ -83,7 +83,7 @@ def main():
     )
     
     result = engine.reason(edge_case)
-    print(f"Input: {dict(edge_case)}")
+    print(f"Input: {edge_case.data}")
     print(f"Result: {result.verdict}")
     print(f"Fired rules: {result.fired_rules}")
     print(f"Reasoning: {result.reasoning}")
