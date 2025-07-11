@@ -8,12 +8,13 @@ Extracted from evaluator.py to follow Single Responsibility Principle.
 
 import ast
 from dataclasses import dataclass
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING, Optional
 from .core_evaluator import CoreEvaluator
 from ...core.exceptions import EvaluationError, FunctionError, ValidationError
 
 if TYPE_CHECKING:
     from ...core.models import ExecutionContext
+    from ...llm.prompt_evaluator import PromptEvaluator
 
 
 @dataclass
@@ -35,9 +36,9 @@ class ConditionTrace:
 class TraceEvaluator:
     """Evaluator that wraps CoreEvaluator and adds simple tracing."""
     
-    def __init__(self):
+    def __init__(self, prompt_evaluator: Optional['PromptEvaluator'] = None):
         """Initialize trace evaluator with core evaluator."""
-        self._core = CoreEvaluator()
+        self._core = CoreEvaluator(prompt_evaluator)
     
     def register_function(self, name: str, func: Any) -> None:
         """Register a custom function."""

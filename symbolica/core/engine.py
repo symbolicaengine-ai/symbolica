@@ -40,13 +40,17 @@ class Engine:
     def __init__(self, 
                  rules: Optional[List[Rule]] = None,
                  temporal_config: Optional[Dict[str, Any]] = None,
-                 execution_config: Optional[Dict[str, Any]] = None):
+                 execution_config: Optional[Dict[str, Any]] = None,
+                 llm_client: Optional[Any] = None,
+                 llm_config: Optional[Dict[str, Any]] = None):
         """Initialize engine with rules and optional configuration.
         
         Args:
             rules: Optional list of rules to initialize with
             temporal_config: Optional temporal service configuration
             execution_config: Optional execution configuration (max_iterations, etc.)
+            llm_client: Optional LLM client for PROMPT() function support
+            llm_config: Optional LLM configuration dictionary
         """
         # Initialize logger
         self.logger = logging.getLogger('symbolica.Engine')
@@ -69,8 +73,34 @@ class Engine:
         execution_config = execution_config or {}
         self._max_iterations = execution_config.get('max_iterations', 10)
         
-        # Initialize execution components
-        self._evaluator = ASTEvaluator()
+        # Initialize LLM integration if client provided
+        self._prompt_evaluator = None
+        if llm_client:
+            try:
+                from ..llm import LLMClientAdapter, LLMConfig
+                from ..llm.prompt_evaluator import PromptEvaluator
+                
+                # Create LLM configuration
+                llm_config = llm_config or {}
+                config = LLMConfig.from_dict(llm_config)
+                
+                # Create client adapter
+                adapter = LLMClientAdapter(llm_client, config)
+                
+                # Create prompt evaluator
+                self._prompt_evaluator = PromptEvaluator(adapter)
+                
+                self.logger.info("LLM integration enabled with PROMPT() function support")
+                
+            except ImportError as e:
+                self.logger.warning(f"LLM integration failed - missing dependencies: {e}")
+                self._prompt_evaluator = None
+            except Exception as e:
+                self.logger.error(f"LLM integration failed: {e}")
+                self._prompt_evaluator = None
+        
+        # Initialize execution components (pass LLM evaluator to ASTEvaluator)
+        self._evaluator = ASTEvaluator(prompt_evaluator=self._prompt_evaluator)
         self._executor = self._evaluator
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
@@ -122,27 +152,31 @@ class Engine:
         # Check for function calls (word followed by parentheses)
         has_function_call = re.search(r'\w+\s*\(', value)
         
-        # Check for comparison operators (field access patterns)
+        # Check for comparison operators 
         comparison_ops = ['==', '!=', '<', '>', '<=', '>=']
         has_comparisons = any(op in value for op in comparison_ops)
         
-        # Check for variable patterns (words that aren't obvious strings)
-        # This is a heuristic - variables typically don't have spaces unless in quotes
-        words = re.findall(r'\w+', value)
-        has_variables = len(words) > 0 and not value.startswith('"') and not value.startswith("'")
+        # Check for template variables ({{ variable }})
+        has_templates = '{{' in value and '}}' in value
         
-        # If it has arithmetic, parentheses, function calls, or looks like a calculation, treat as expression
+        # Check for boolean/logical operators
+        logical_ops = [' and ', ' or ', ' not ', ' in ', ' is ']
+        has_logical = any(op in value for op in logical_ops)
+        
+        # Only treat as expression if it has clear expression indicators
+        # Do NOT treat single words as expressions - they're usually literal strings
         is_likely_expression = (
             has_arithmetic or 
             has_parentheses or 
             has_function_call or
-            (has_variables and not ' ' in value.strip()) or  # Single words or connected with operators
-            has_comparisons
+            has_comparisons or
+            has_templates or
+            has_logical
         )
         
         # Additional checks to avoid false positives
         # Skip if it's clearly a sentence (multiple words with spaces and no operators)
-        if ' ' in value and not any(op in value for op in arithmetic_ops + comparison_ops) and not has_parentheses:
+        if ' ' in value and not any(op in value for op in arithmetic_ops + comparison_ops + logical_ops) and not has_parentheses:
             return False
         
         # Skip if it looks like a URL, file path, or other string literal
@@ -225,7 +259,7 @@ class Engine:
         self._evaluator._update_function_registry()
     
     def list_functions(self) -> Dict[str, str]:
-        """List all available functions (built-in + custom + temporal)."""
+        """List all available functions (built-in + custom + temporal + LLM)."""
         # Combine built-in functions from evaluator with custom functions
         builtin_functions = {
             'len': 'Get length of sequence',
@@ -235,6 +269,11 @@ class Engine:
             'endswith': 'Check if string ends with substring',
             'contains': 'Check if sequence contains element'
         }
+        
+        # Add LLM functions if available
+        if self._prompt_evaluator:
+            builtin_functions['PROMPT'] = 'Execute LLM prompt with variable substitution and type conversion'
+        
         custom_functions = self._function_registry.list_functions_with_descriptions()
         return {**builtin_functions, **custom_functions}
     

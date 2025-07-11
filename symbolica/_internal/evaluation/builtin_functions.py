@@ -6,13 +6,16 @@ Safe implementations of built-in functions for expression evaluation.
 Extracted from evaluator.py to centralize function definitions.
 """
 
-from typing import Dict, Callable, Any, List
+from typing import Dict, Callable, Any, List, Optional, TYPE_CHECKING
 from ...core.exceptions import EvaluationError
 
+if TYPE_CHECKING:
+    from ...llm.prompt_evaluator import PromptEvaluator
 
-def get_builtin_functions() -> Dict[str, Callable]:
+
+def get_builtin_functions(prompt_evaluator: Optional['PromptEvaluator'] = None) -> Dict[str, Callable]:
     """Get dictionary of all built-in functions."""
-    return {
+    functions = {
         'len': safe_len,
         'sum': safe_sum,
         'abs': safe_abs,
@@ -20,11 +23,21 @@ def get_builtin_functions() -> Dict[str, Callable]:
         'endswith': safe_endswith,
         'contains': safe_contains
     }
+    
+    # Add PROMPT() function if evaluator provided
+    # Note: PROMPT() is handled specially in CoreEvaluator._eval_call()
+    # We add a placeholder here so it appears in function lists
+    if prompt_evaluator:
+        def prompt_placeholder(args):
+            raise EvaluationError("PROMPT() function should be handled by CoreEvaluator")
+        functions['PROMPT'] = prompt_placeholder
+    
+    return functions
 
 
-def get_builtin_function_descriptions() -> Dict[str, str]:
+def get_builtin_function_descriptions(include_llm: bool = False) -> Dict[str, str]:
     """Get descriptions of all built-in functions."""
-    return {
+    descriptions = {
         'len': 'Get length of sequence',
         'sum': 'Sum elements of sequence',
         'abs': 'Absolute value',
@@ -32,6 +45,12 @@ def get_builtin_function_descriptions() -> Dict[str, str]:
         'endswith': 'Check if string ends with substring',
         'contains': 'Check if sequence contains element'
     }
+    
+    # Add LLM function descriptions if requested
+    if include_llm:
+        descriptions['PROMPT'] = 'Execute LLM prompt with variable substitution and type conversion'
+    
+    return descriptions
 
 
 # Built-in function implementations
