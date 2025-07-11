@@ -16,6 +16,7 @@ class TestBasicWorkflows:
     """Test basic end-to-end workflows."""
     
     @pytest.mark.integration
+    @pytest.mark.critical
     def test_simple_yaml_to_execution(self, sample_yaml_rules, sample_facts):
         """Test complete workflow: YAML → Engine → Execution."""
         # Create engine from YAML
