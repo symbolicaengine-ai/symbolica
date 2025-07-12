@@ -33,6 +33,7 @@ SAFE_NODE_TYPES: Set[Type[ast.AST]] = {
     ast.Constant,    # Literals
     ast.List,        # List literals
     ast.Subscript,   # Indexing operations
+    ast.IfExp,       # Conditional expressions (x if condition else y)
     # Boolean operators
     ast.And, ast.Or, ast.Not,
     # Comparison operators  
@@ -149,7 +150,8 @@ class CoreEvaluator:
                 ast.Name: self._eval_name,
                 ast.Constant: self._eval_constant,
                 ast.List: self._eval_list,
-                ast.Subscript: self._eval_subscript
+                ast.Subscript: self._eval_subscript,
+                ast.IfExp: self._eval_if_exp
             }
             
             handler = node_handlers.get(type(node))
@@ -373,4 +375,19 @@ class CoreEvaluator:
         except (IndexError, KeyError, TypeError) as e:
             raise EvaluationError(f"Subscript error: {e}")
         
+        return result, field_values
+    
+    def _eval_if_exp(self, node: ast.IfExp, context: 'ExecutionContext') -> Tuple[Any, Dict[str, Any]]:
+        """Handle conditional expressions (x if condition else y)."""
+        # Evaluate condition first
+        test_val, test_fields = self._eval_node(node.test, context)
+        field_values = test_fields.copy()
+        
+        # Based on condition, evaluate either body or orelse
+        if test_val:
+            result, result_fields = self._eval_node(node.body, context)
+        else:
+            result, result_fields = self._eval_node(node.orelse, context)
+        
+        field_values.update(result_fields)
         return result, field_values 
