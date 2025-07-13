@@ -153,6 +153,34 @@ class ExecutionResult:
                 })
         
         return critical_conditions
+    
+    def get_winning_rules(self) -> List[str]:
+        """Get rules that actually contributed to the final verdict."""
+        if not self._context:
+            return self.fired_rules
+        return self._context.get_winning_rules()
+    
+    def get_effective_reasoning(self) -> str:
+        """Get reasoning showing only rules that contributed to the final verdict."""
+        if not self._context:
+            return self.reasoning
+        return self._context.get_effective_reasoning()
+    
+    def get_priority_reasoning(self) -> str:
+        """Get reasoning showing priority conflicts and overrides."""
+        if not self._context:
+            return self.reasoning
+        return self._context.get_priority_reasoning()
+    
+    def get_all_reasoning(self) -> str:
+        """Get reasoning for all fired rules (original behavior)."""
+        if not self._context:
+            return self.reasoning
+        return self._context.get_all_reasoning()
+    
+    def explain_with_priorities(self) -> str:
+        """Get detailed reasoning showing priority conflicts and overrides (convenience method)."""
+        return self.get_priority_reasoning()
 
 
 @dataclass(frozen=True)
@@ -186,6 +214,7 @@ class ExecutionContext:
     reasoning_steps: List[str] = field(default_factory=list)
     _verdict: Dict[str, Any] = field(default_factory=dict)  # Track changes incrementally
     _verdict_priorities: Dict[str, int] = field(default_factory=dict)  # Track priority of rule that set each fact
+    _verdict_sources: Dict[str, str] = field(default_factory=dict)  # Track which rule set each fact in verdict
     _intermediate_facts: Dict[str, Any] = field(default_factory=dict)  # Track facts created by rules
     start_time: float = field(default_factory=time.perf_counter)
     _rule_traces: Dict[str, Any] = field(default_factory=dict)  # Store hierarchical traces per rule
@@ -195,7 +224,7 @@ class ExecutionContext:
         if not self.enriched_facts:
             self.enriched_facts = self.original_facts.data.copy()
     
-    def set_fact(self, key: str, value: Any, priority: int = 0) -> None:
+    def set_fact(self, key: str, value: Any, priority: int = 0, rule_id: str = "") -> None:
         """Set a fact in the context and track in verdict, considering rule priority."""
         self.enriched_facts[key] = value
         # Track as changed if it's new or different from original
@@ -205,6 +234,7 @@ class ExecutionContext:
             if priority >= existing_priority:
                 self._verdict[key] = value
                 self._verdict_priorities[key] = priority
+                self._verdict_sources[key] = rule_id
     
     def set_intermediate_fact(self, key: str, value: Any) -> None:
         """Set an intermediate fact that other rules can use (but not in final verdict)."""
@@ -297,9 +327,54 @@ class ExecutionContext:
         """Get intermediate facts created during execution."""
         return self._intermediate_facts.copy()
     
-    @property
-    def reasoning(self) -> str:
-        """Get simple reasoning explanation."""
+    def get_winning_rules(self) -> List[str]:
+        """Get rules that actually contributed to the final verdict."""
+        winning_rules = set(self._verdict_sources.values())
+        # Maintain order from fired_rules
+        return [rule_id for rule_id in self.fired_rules if rule_id in winning_rules]
+    
+    def get_effective_reasoning(self) -> str:
+        """Get reasoning showing only rules that contributed to the final verdict."""
         if not self.reasoning_steps:
             return "No rules fired"
-        return "\n".join(self.reasoning_steps) 
+        
+        winning_rules = set(self._verdict_sources.values())
+        effective_steps = [
+            step for step in self.reasoning_steps 
+            if any(step.startswith(f"{rule_id}:") for rule_id in winning_rules)
+        ]
+        
+        if not effective_steps:
+            return "No rules contributed to the final verdict"
+        
+        return "\n".join(effective_steps)
+    
+    def get_priority_reasoning(self) -> str:
+        """Get reasoning showing priority conflicts and overrides."""
+        if not self.reasoning_steps:
+            return "No rules fired"
+        
+        lines = []
+        winning_rules = set(self._verdict_sources.values())
+        
+        for step in self.reasoning_steps:
+            # Extract rule_id from step
+            rule_id = step.split(":")[0] if ":" in step else ""
+            
+            if rule_id in winning_rules:
+                lines.append(f"✓ {step}")  # Won (contributed to verdict)
+            else:
+                lines.append(f"○ {step} [overridden]")  # Lost (overridden by higher priority)
+        
+        return "\n".join(lines)
+    
+    def get_all_reasoning(self) -> str:
+        """Get reasoning for all fired rules (original behavior)."""
+        if not self.reasoning_steps:
+            return "No rules fired"
+        return "\n".join(self.reasoning_steps)
+    
+    @property
+    def reasoning(self) -> str:
+        """Get reasoning explanation (default: effective reasoning showing only winning rules)."""
+        return self.get_effective_reasoning() 

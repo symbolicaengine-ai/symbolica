@@ -480,7 +480,7 @@ class Engine:
                 for key, value in rule.actions.items():
                     # Evaluate expressions, keep literals as-is
                     evaluated_value = self._evaluate_action_value(value, context)
-                    context.set_fact(key, evaluated_value, rule.priority)
+                    context.set_fact(key, evaluated_value, rule.priority, rule.id)
                     evaluated_actions[key] = evaluated_value
                 
                 # Record detailed reasoning using trace
