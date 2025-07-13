@@ -20,12 +20,10 @@ def main():
     print("Custom Functions Example")
     print("=" * 50)
     
-    # Load rules from YAML file
-    yaml_path = os.path.join(os.path.dirname(__file__), "loan_analysis.yaml")
-    engine = Engine.from_file(yaml_path)
+    engine = Engine.from_file("loan_analysis.yaml")
     
     # Register custom business logic functions using LAMBDA FUNCTIONS (recommended)
-    print("Registering lambda functions (safe by default):")
+    # print("Registering lambda functions (safe by default):")
     
     # Risk scoring as a lambda function
     engine.register_function("risk_score", 
@@ -35,13 +33,13 @@ def main():
             "high"
         )
     )
-    print("  ✓ risk_score: lambda function for credit risk assessment")
+    # print("risk_score: lambda function for credit risk assessment")
     
     # Fraud detection as a lambda function
     engine.register_function("fraud_check",
         lambda amount, avg_tx: amount > avg_tx * 4 or amount > 200000
     )
-    print("  ✓ fraud_check: lambda function for fraud detection")
+    print("fraud_check: lambda function for fraud detection")
     
     # Test case 1: Low risk customer
     print("\nTest 1: Low Risk Customer")
@@ -54,8 +52,10 @@ def main():
     )
     
     result = engine.reason(low_risk)
-    print(f"Input: Credit {low_risk['credit_score']}, Income ${low_risk['income']:,}, Debt ratio {low_risk['debt_ratio']}")
+    print(f"Input: {low_risk.data}")
     print(f"Result: {result.verdict}")
+    print(f"Fired rules: {result.fired_rules}")
+    print(f"Execution time: {result.execution_time_ms:.2f}ms")
     print(f"Reasoning: {result.reasoning}")
     
     # Test case 2: Medium risk customer

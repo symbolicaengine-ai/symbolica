@@ -39,6 +39,7 @@ def main():
     print(f"Normal operation - Alerts: {len(result.fired_rules)}")
     if result.fired_rules:
         print(f"Fired rules: {result.fired_rules}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Simulate CPU spike
     print("\nSimulating CPU spike...")
@@ -47,6 +48,7 @@ def main():
     print(f"CPU spike - Fired rules: {result.fired_rules}")
     if result.verdict:
         print(f"Alerts: {result.verdict}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Simulate sustained high CPU
     print("\nSimulating sustained high CPU...")
@@ -55,6 +57,7 @@ def main():
     print(f"Sustained CPU - Fired rules: {result.fired_rules}")
     if result.verdict:
         print(f"Alerts: {result.verdict}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Simulate memory trend
     print("\nSimulating memory usage trend...")
@@ -63,6 +66,7 @@ def main():
     print(f"Memory trend - Fired rules: {result.fired_rules}")
     if result.verdict:
         print(f"Alerts: {result.verdict}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Simulate network errors
     print("\nSimulating network error burst...")
@@ -71,6 +75,7 @@ def main():
     print(f"Network errors - Fired rules: {result.fired_rules}")
     if result.verdict:
         print(f"Alerts: {result.verdict}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Simulate system overload
     print("\nSimulating system overload...")
@@ -79,6 +84,7 @@ def main():
     print(f"System overload - Fired rules: {result.fired_rules}")
     if result.verdict:
         print(f"Critical alerts: {result.verdict}")
+        print(f"Reasoning: {result.reasoning}")
     
     # Show data analysis
     print("\nData Analysis:")
@@ -134,15 +140,19 @@ def simulate_system_overload(engine):
 
 def analyze_stored_data(engine):
     """Analyze the temporal data stored in the engine."""
-    if hasattr(engine, '_temporal_store'):
-        store = engine._temporal_store
+    # Access the temporal store through the temporal service
+    if hasattr(engine, '_temporal_service') and hasattr(engine._temporal_service, '_store'):
+        store = engine._temporal_service._store
         print(f"Data points stored:")
-        for key in store.data.keys():
-            count = len(store.data[key])
+        for key in store._timeseries.keys():
+            points = store._timeseries[key]
+            count = len(points)
             if count > 0:
-                recent_values = [dp.value for dp in store.data[key][-5:]]
+                recent_values = [dp.value for dp in list(points)[-5:]]
                 avg_recent = sum(recent_values) / len(recent_values) if recent_values else 0
                 print(f"  - {key}: {count} points, recent avg: {avg_recent:.1f}")
+    else:
+        print("  No temporal store found")
     
     print("\nTemporal function examples:")
     print("  recent_avg('cpu_usage', 300) - Average CPU in last 5 minutes")
