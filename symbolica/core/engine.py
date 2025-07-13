@@ -159,12 +159,17 @@ class Engine:
         # Check for template variables ({{ variable }})
         has_templates = '{{' in value and '}}' in value
         
-        # Check for boolean/logical operators
+        # Check for boolean/logical operators, but be more careful about context
+        # Only consider it logical if it's combined with other expression indicators
         logical_ops = [' and ', ' or ', ' not ', ' in ', ' is ']
-        has_logical = any(op in value for op in logical_ops)
+        has_logical_words = any(op in value for op in logical_ops)
+        
+        # More restrictive logical check: must have logical words AND other expression indicators
+        # This prevents simple sentences like "Good credit and sufficient income" from being treated as expressions
+        has_logical = has_logical_words and (has_arithmetic or has_parentheses or has_function_call or has_comparisons or has_templates)
         
         # Only treat as expression if it has clear expression indicators
-        # Do NOT treat single words as expressions - they're usually literal strings
+        # Do NOT treat single words or simple sentences as expressions
         is_likely_expression = (
             has_arithmetic or 
             has_parentheses or 
@@ -178,9 +183,11 @@ class Engine:
         # Skip if it's clearly a sentence (multiple words with spaces and no operators)
         # BUT don't exclude template expressions even if they have spaces
         if (' ' in value and 
-            not any(op in value for op in arithmetic_ops + comparison_ops + logical_ops) and 
+            not any(op in value for op in arithmetic_ops + comparison_ops) and 
             not has_parentheses and 
-            not has_templates):  # Don't exclude templates!
+            not has_templates and
+            not has_function_call and
+            not has_logical):  # Updated to use the more restrictive has_logical
             return False
         
         # Skip if it looks like a URL, file path, or other string literal
@@ -473,7 +480,7 @@ class Engine:
                 for key, value in rule.actions.items():
                     # Evaluate expressions, keep literals as-is
                     evaluated_value = self._evaluate_action_value(value, context)
-                    context.set_fact(key, evaluated_value)
+                    context.set_fact(key, evaluated_value, rule.priority)
                     evaluated_actions[key] = evaluated_value
                 
                 # Record detailed reasoning using trace

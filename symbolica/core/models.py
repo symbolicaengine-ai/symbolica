@@ -185,6 +185,7 @@ class ExecutionContext:
     fired_rules: List[str]
     reasoning_steps: List[str] = field(default_factory=list)
     _verdict: Dict[str, Any] = field(default_factory=dict)  # Track changes incrementally
+    _verdict_priorities: Dict[str, int] = field(default_factory=dict)  # Track priority of rule that set each fact
     _intermediate_facts: Dict[str, Any] = field(default_factory=dict)  # Track facts created by rules
     start_time: float = field(default_factory=time.perf_counter)
     _rule_traces: Dict[str, Any] = field(default_factory=dict)  # Store hierarchical traces per rule
@@ -194,12 +195,16 @@ class ExecutionContext:
         if not self.enriched_facts:
             self.enriched_facts = self.original_facts.data.copy()
     
-    def set_fact(self, key: str, value: Any) -> None:
-        """Set a fact in the context and track in verdict."""
+    def set_fact(self, key: str, value: Any, priority: int = 0) -> None:
+        """Set a fact in the context and track in verdict, considering rule priority."""
         self.enriched_facts[key] = value
         # Track as changed if it's new or different from original
         if key not in self.original_facts.data or self.original_facts.data[key] != value:
-            self._verdict[key] = value
+            # Only set in verdict if this rule has higher priority than the existing one
+            existing_priority = self._verdict_priorities.get(key, -1)
+            if priority >= existing_priority:
+                self._verdict[key] = value
+                self._verdict_priorities[key] = priority
     
     def set_intermediate_fact(self, key: str, value: Any) -> None:
         """Set an intermediate fact that other rules can use (but not in final verdict)."""
@@ -214,9 +219,9 @@ class ExecutionContext:
         """Record that a rule fired with simple reasoning."""
         self.fired_rules.append(rule_id)
         if triggered_by:
-            self.reasoning_steps.append(f"✓ {rule_id}: {reason} (triggered by {triggered_by})")
+            self.reasoning_steps.append(f"{rule_id}: {reason} (triggered by {triggered_by})")
         else:
-            self.reasoning_steps.append(f"✓ {rule_id}: {reason}")
+            self.reasoning_steps.append(f"{rule_id}: {reason}")
     
     def store_rule_trace(self, rule_id: str, execution_path: Any) -> None:
         """Store execution path for a rule."""
@@ -270,7 +275,7 @@ class ExecutionContext:
                 })
             else:
                 # Fallback for rules without execution paths
-                reasoning_step = next((step for step in self.reasoning_steps if step.startswith(f"✓ {rule_id}:")), "")
+                reasoning_step = next((step for step in self.reasoning_steps if step.startswith(f"{rule_id}:")), "")
                 chain.append({
                     'rule_id': rule_id,
                     'condition': 'unknown',
