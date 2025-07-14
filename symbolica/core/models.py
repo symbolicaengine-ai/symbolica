@@ -75,6 +75,11 @@ class ExecutionResult:
     intermediate_facts: Dict[str, Any] = field(default_factory=dict)  # Facts created during execution
     _context: Optional['ExecutionContext'] = field(default=None, repr=False)  # Store context for rich tracing
     
+    # Fallback metadata
+    evaluation_method: str = "structured"  # 'structured', 'mixed', 'error'
+    fallback_triggered: bool = False  # Whether any rule used LLM fallback
+    fallback_stats: Dict[str, Any] = field(default_factory=dict)  # Statistics about fallback usage
+    
     @property
     def success(self) -> bool:
         """True if execution completed successfully."""
@@ -219,6 +224,15 @@ class ExecutionContext:
     start_time: float = field(default_factory=time.perf_counter)
     _rule_traces: Dict[str, Any] = field(default_factory=dict)  # Store hierarchical traces per rule
     
+    # Fallback tracking
+    _fallback_usage: Dict[str, Any] = field(default_factory=lambda: {
+        'total_evaluations': 0,
+        'structured_success': 0,
+        'llm_fallback': 0,
+        'errors': 0,
+        'fallback_reasons': []
+    })
+    
     def __post_init__(self):
         # Initialize enriched facts from original
         if not self.enriched_facts:
@@ -264,6 +278,59 @@ class ExecutionContext:
     def get_all_traces(self) -> Dict[str, Any]:
         """Get all stored execution paths."""
         return self._rule_traces.copy()
+    
+    def record_evaluation_attempt(self, method: str, rule_id: str = "", reason: str = "") -> None:
+        """Record an evaluation attempt and its outcome."""
+        self._fallback_usage['total_evaluations'] += 1
+        
+        if method == "structured":
+            self._fallback_usage['structured_success'] += 1
+        elif method == "llm_fallback":
+            self._fallback_usage['llm_fallback'] += 1
+            if reason:
+                self._fallback_usage['fallback_reasons'].append({
+                    'rule_id': rule_id,
+                    'reason': reason
+                })
+        elif method == "error":
+            self._fallback_usage['errors'] += 1
+    
+    def get_fallback_stats(self) -> Dict[str, Any]:
+        """Get fallback usage statistics."""
+        total = self._fallback_usage['total_evaluations']
+        if total == 0:
+            return {
+                'total_evaluations': 0,
+                'structured_success_rate': 1.0,
+                'llm_fallback_rate': 0.0,
+                'error_rate': 0.0,
+                'fallback_triggered': False,
+                'evaluation_method': 'structured'
+            }
+        
+        structured_rate = self._fallback_usage['structured_success'] / total
+        llm_rate = self._fallback_usage['llm_fallback'] / total
+        error_rate = self._fallback_usage['errors'] / total
+        
+        # Determine overall evaluation method
+        if llm_rate > 0 and structured_rate > 0:
+            method = 'mixed'
+        elif llm_rate > 0:
+            method = 'llm_fallback'
+        elif error_rate == 1.0:
+            method = 'error'
+        else:
+            method = 'structured'
+        
+        return {
+            'total_evaluations': total,
+            'structured_success_rate': structured_rate,
+            'llm_fallback_rate': llm_rate,
+            'error_rate': error_rate,
+            'fallback_triggered': llm_rate > 0,
+            'evaluation_method': method,
+            'fallback_reasons': self._fallback_usage['fallback_reasons']
+        }
     
     def get_llm_reasoning_context(self) -> Dict[str, Any]:
         """Get rich reasoning context optimized for LLM processing."""

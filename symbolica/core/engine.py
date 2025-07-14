@@ -42,7 +42,8 @@ class Engine:
                  temporal_config: Optional[Dict[str, Any]] = None,
                  execution_config: Optional[Dict[str, Any]] = None,
                  llm_client: Optional[Any] = None,
-                 llm_config: Optional[Dict[str, Any]] = None):
+                 llm_config: Optional[Dict[str, Any]] = None,
+                 fallback_strategy: str = "strict"):
         """Initialize engine with rules and optional configuration.
         
         Args:
@@ -51,9 +52,18 @@ class Engine:
             execution_config: Optional execution configuration (max_iterations, etc.)
             llm_client: Optional LLM client for PROMPT() function support
             llm_config: Optional LLM configuration dictionary
+            fallback_strategy: Evaluation fallback strategy ('strict', 'auto')
+                - 'strict': Current behavior, fail on evaluation errors (default)
+                - 'auto': Try structured evaluation first, fallback to LLM on errors
         """
         # Initialize logger
         self.logger = logging.getLogger('symbolica.Engine')
+        
+        # Store fallback strategy
+        valid_strategies = ["strict", "auto"]
+        if fallback_strategy not in valid_strategies:
+            raise ValueError(f"Invalid fallback_strategy '{fallback_strategy}'. Must be one of: {valid_strategies}")
+        self._fallback_strategy = fallback_strategy
         
         # Initialize core components
         self._rules = rules or []
@@ -75,10 +85,12 @@ class Engine:
         
         # Initialize LLM integration if client provided
         self._prompt_evaluator = None
+        self._fallback_evaluator = None
         if llm_client:
             try:
                 from ..llm import LLMClientAdapter, LLMConfig
                 from ..llm.prompt_evaluator import PromptEvaluator
+                from ..llm.fallback_evaluator import FallbackEvaluator
                 
                 # Create LLM configuration
                 llm_config = llm_config or {}
@@ -99,8 +111,22 @@ class Engine:
                 self.logger.error(f"LLM integration failed: {e}")
                 self._prompt_evaluator = None
         
+        # Validate fallback strategy compatibility
+        if self._fallback_strategy == "auto" and not self._prompt_evaluator:
+            self.logger.warning(
+                "Fallback strategy 'auto' requires LLM client but none provided. "
+                "Falling back to 'strict' mode."
+            )
+            self._fallback_strategy = "strict"
+        
         # Initialize execution components (pass LLM evaluator to ASTEvaluator)
         self._evaluator = ASTEvaluator(prompt_evaluator=self._prompt_evaluator)
+        
+        # Initialize fallback evaluator if needed
+        if self._fallback_strategy == "auto" and self._prompt_evaluator:
+            from ..llm.fallback_evaluator import FallbackEvaluator
+            self._fallback_evaluator = FallbackEvaluator(self._evaluator, self._prompt_evaluator)
+        
         self._executor = self._evaluator
         self._dag_strategy = DAGStrategy(self._evaluator)
         self._backward_chainer = BackwardChainer(self._rules, self._evaluator)
@@ -372,7 +398,10 @@ class Engine:
         # Execute rules iteratively until convergence
         self._execute_rules_iteratively(context)
         
-        # Build result with context for hierarchical tracing
+        # Get fallback statistics
+        fallback_stats = context.get_fallback_stats()
+        
+        # Build result with context for hierarchical tracing and fallback metadata
         execution_time_ms = (time.perf_counter() - start_time) * 1000
         return ExecutionResult(
             verdict=context.verdict,
@@ -380,7 +409,12 @@ class Engine:
             execution_time_ms=execution_time_ms,
             reasoning=context.reasoning,
             intermediate_facts=context.intermediate_facts,
-            _context=context  # Store context for rich tracing access
+            _context=context,  # Store context for rich tracing access
+            
+            # Fallback metadata
+            evaluation_method=fallback_stats['evaluation_method'],
+            fallback_triggered=fallback_stats['fallback_triggered'],
+            fallback_stats=fallback_stats
         )
     
     def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
@@ -424,24 +458,55 @@ class Engine:
         """Check if a rule's condition is satisfied and it hasn't fired yet."""
         if rule.id in context.fired_rules:
             return False
-            
-        try:
-            trace = self._evaluator.evaluate_with_trace(rule.condition, context)
-            return trace.result
-        except (EvaluationError, FunctionError) as e:
-            # Log evaluation failures but continue execution
-            self.logger.warning(
-                f"Rule condition evaluation failed for rule '{rule.id}': {str(e)}",
-                extra={'rule_id': rule.id, 'condition': rule.condition}
-            )
-            return False
-        except Exception as e:
-            # Log unexpected errors but continue execution
-            self.logger.error(
-                f"Unexpected error evaluating rule '{rule.id}': {str(e)}",
-                extra={'rule_id': rule.id, 'condition': rule.condition}
-            )
-            return False
+        
+        # Choose evaluation method based on strategy
+        if self._fallback_strategy == "auto" and self._fallback_evaluator:
+            # Use fallback evaluator which handles structured → LLM fallback internally
+            try:
+                fallback_result = self._fallback_evaluator.prompt(
+                    rule.condition,
+                    return_type="bool",
+                    context_facts=context.enriched_facts,
+                    rule_id=rule.id
+                )
+                
+                # Record the evaluation method used
+                if fallback_result.method_used == "structured":
+                    context.record_evaluation_attempt("structured", rule.id)
+                elif fallback_result.method_used == "llm":
+                    context.record_evaluation_attempt("llm_fallback", rule.id, fallback_result.structured_error or "")
+                    self.logger.info(f"LLM fallback succeeded for rule '{rule.id}': {fallback_result.value}")
+                else:
+                    context.record_evaluation_attempt("error", rule.id, "Both structured and LLM failed")
+                
+                return bool(fallback_result.value)
+                
+            except Exception as e:
+                context.record_evaluation_attempt("error", rule.id, str(e))
+                self.logger.error(f"Fallback evaluation failed for rule '{rule.id}': {str(e)}")
+                return False
+        else:
+            # Use standard structured evaluation (strict mode)
+            try:
+                trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+                context.record_evaluation_attempt("structured", rule.id)
+                return trace.result
+            except (EvaluationError, FunctionError) as e:
+                context.record_evaluation_attempt("error", rule.id, str(e))
+                # Log evaluation failures but continue execution (original behavior)
+                self.logger.warning(
+                    f"Rule condition evaluation failed for rule '{rule.id}': {str(e)}",
+                    extra={'rule_id': rule.id, 'condition': rule.condition}
+                )
+                return False
+            except Exception as e:
+                context.record_evaluation_attempt("error", rule.id, str(e))
+                # Log unexpected errors but continue execution (original behavior)
+                self.logger.error(
+                    f"Unexpected error evaluating rule '{rule.id}': {str(e)}",
+                    extra={'rule_id': rule.id, 'condition': rule.condition}
+                )
+                return False
     
     def _execute_rule(self, rule: Rule, context: ExecutionContext, triggered_by: Optional[str] = None) -> bool:
         """Execute a single rule with proper error handling.
@@ -450,20 +515,28 @@ class Engine:
             True if the rule fired, False otherwise
         """
         try:
-            # Evaluate with execution path for detailed analysis
-            if hasattr(self._evaluator, 'evaluate_with_execution_path'):
-                execution_path = self._evaluator.evaluate_with_execution_path(rule.condition, context)
-                # Store the execution path for LLM processing
-                context.store_rule_trace(rule.id, execution_path)
-                
-                # Use execution path results
-                trace_result = execution_path.result
-                detailed_reason = execution_path.explain()
+            # For auto fallback mode, we trust that _can_rule_fire already evaluated the condition correctly
+            # and avoid re-evaluation that might fail again
+            if self._fallback_strategy == "auto" and self._fallback_evaluator:
+                # Skip condition re-evaluation, just apply actions since _can_rule_fire already succeeded
+                trace_result = True
+                detailed_reason = f"Rule condition evaluated via fallback (see evaluation logs)"
             else:
-                # Fallback to simple trace
-                trace = self._evaluator.evaluate_with_trace(rule.condition, context)
-                trace_result = trace.result
-                detailed_reason = trace.explain()
+                # Standard evaluation for strict mode
+                # Evaluate with execution path for detailed analysis
+                if hasattr(self._evaluator, 'evaluate_with_execution_path'):
+                    execution_path = self._evaluator.evaluate_with_execution_path(rule.condition, context)
+                    # Store the execution path for LLM processing
+                    context.store_rule_trace(rule.id, execution_path)
+                    
+                    # Use execution path results
+                    trace_result = execution_path.result
+                    detailed_reason = execution_path.explain()
+                else:
+                    # Fallback to simple trace
+                    trace = self._evaluator.evaluate_with_trace(rule.condition, context)
+                    trace_result = trace.result
+                    detailed_reason = trace.explain()
             
             if trace_result:
                 # Apply facts first (intermediate state available to other rules)
