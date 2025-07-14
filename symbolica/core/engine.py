@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from .models import Rule, Facts, ExecutionContext, ExecutionResult, Goal, facts
+from .expression_parser import ExpressionParser
+from .config.engine_config import EngineConfig
 from .exceptions import (
     ValidationError, ExecutionError, EvaluationError, 
     DAGError, ConfigurationError, ErrorCollector, FunctionError
@@ -43,27 +45,39 @@ class Engine:
                  execution_config: Optional[Dict[str, Any]] = None,
                  llm_client: Optional[Any] = None,
                  llm_config: Optional[Dict[str, Any]] = None,
-                 fallback_strategy: str = "strict"):
+                 fallback_strategy: str = "strict",
+                 config: Optional[EngineConfig] = None):
         """Initialize engine with rules and optional configuration.
         
         Args:
             rules: Optional list of rules to initialize with
-            temporal_config: Optional temporal service configuration
-            execution_config: Optional execution configuration (max_iterations, etc.)
+            temporal_config: Optional temporal service configuration (legacy)
+            execution_config: Optional execution configuration (legacy)
             llm_client: Optional LLM client for PROMPT() function support
-            llm_config: Optional LLM configuration dictionary
-            fallback_strategy: Evaluation fallback strategy ('strict', 'auto')
-                - 'strict': Current behavior, fail on evaluation errors (default)
-                - 'auto': Try structured evaluation first, fallback to LLM on errors
+            llm_config: Optional LLM configuration dictionary (legacy)
+            fallback_strategy: Evaluation fallback strategy (legacy)
+            config: EngineConfig object (preferred way to pass configuration)
         """
         # Initialize logger
         self.logger = logging.getLogger('symbolica.Engine')
         
-        # Store fallback strategy
-        valid_strategies = ["strict", "auto"]
-        if fallback_strategy not in valid_strategies:
-            raise ValueError(f"Invalid fallback_strategy '{fallback_strategy}'. Must be one of: {valid_strategies}")
-        self._fallback_strategy = fallback_strategy
+        # Create configuration (either from config object or legacy parameters)
+        if config is not None:
+            self._config = config
+        else:
+            # Backward compatibility: create config from legacy parameters
+            self._config = EngineConfig.from_dicts(
+                temporal_config=temporal_config,
+                execution_config=execution_config, 
+                llm_config=llm_config,
+                fallback_strategy=fallback_strategy
+            )
+        
+        # Validate configuration
+        self._config.validate()
+        
+        # Store fallback strategy (for backward compatibility)
+        self._fallback_strategy = self._config.fallback_strategy
         
         # Initialize core components
         self._rules = rules or []
@@ -72,16 +86,12 @@ class Engine:
         self._rule_loader = RuleLoader()
         
         # Initialize temporal service with configuration
-        temporal_config = temporal_config or {}
+        temporal_config_dict = self._config.get_temporal_config()
         self._temporal_service = TemporalService(
-            max_age_seconds=temporal_config.get('max_age_seconds', 3600),
-            max_points_per_key=temporal_config.get('max_points_per_key', 1000),
-            cleanup_interval=temporal_config.get('cleanup_interval', 300)
+            max_age_seconds=temporal_config_dict['max_age_seconds'],
+            max_points_per_key=temporal_config_dict['max_points_per_key'],
+            cleanup_interval=temporal_config_dict['cleanup_interval']
         )
-        
-        # Initialize execution configuration
-        execution_config = execution_config or {}
-        self._max_iterations = execution_config.get('max_iterations', 10)
         
         # Initialize LLM integration if client provided
         self._prompt_evaluator = None
@@ -93,8 +103,8 @@ class Engine:
                 from ..llm.fallback_evaluator import FallbackEvaluator
                 
                 # Create LLM configuration
-                llm_config = llm_config or {}
-                config = LLMConfig.from_dict(llm_config)
+                llm_config_dict = self._config.get_llm_config()
+                config = LLMConfig.from_dict(llm_config_dict)
                 
                 # Create client adapter
                 adapter = LLMClientAdapter(llm_client, config)
@@ -122,6 +132,9 @@ class Engine:
         # Initialize execution components (pass LLM evaluator to ASTEvaluator)
         self._evaluator = ASTEvaluator(prompt_evaluator=self._prompt_evaluator)
         
+        # Initialize expression parser
+        self._expression_parser = ExpressionParser(self._evaluator)
+        
         # Initialize fallback evaluator if needed
         if self._fallback_strategy == "auto" and self._prompt_evaluator:
             from ..llm.fallback_evaluator import FallbackEvaluator
@@ -145,163 +158,20 @@ class Engine:
         
         # Connect function registry to evaluator (system functions need special handling)
         for name, func in self._function_registry._functions.items():
-            # System functions bypass normal validation in evaluator too
-            self._evaluator._core.register_function(name, func)
-            self._evaluator._trace_evaluator.register_function(name, func)
-            self._evaluator._execution_path_evaluator.register_function(name, func)
-            # Update field extractor
-            self._evaluator._update_function_registry()
+            # System functions bypass normal validation, use unified registration
+            self._register_function_with_evaluators(name, func)
     
     def _is_expression(self, value: Any) -> bool:
-        """Detect if a value should be treated as an expression to evaluate.
-        
-        Args:
-            value: Value to check
-            
-        Returns:
-            True if value appears to be an expression, False otherwise
-        """
-        if not isinstance(value, str):
-            return False
-        
-        # Skip empty strings
-        if not value.strip():
-            return False
-        
-        # Check for arithmetic operators
-        arithmetic_ops = ['+', '-', '*', '/', '//', '%', '**']
-        has_arithmetic = any(op in value for op in arithmetic_ops)
-        
-        # Check for parentheses (likely mathematical expression)
-        has_parentheses = '(' in value and ')' in value
-        
-        # Check for function calls (word followed by parentheses)
-        has_function_call = re.search(r'\w+\s*\(', value)
-        
-        # Check for comparison operators 
-        comparison_ops = ['==', '!=', '<', '>', '<=', '>=']
-        has_comparisons = any(op in value for op in comparison_ops)
-        
-        # Check for template variables ({{ variable }})
-        has_templates = '{{' in value and '}}' in value
-        
-        # Check for boolean/logical operators, but be more careful about context
-        # Only consider it logical if it's combined with other expression indicators
-        logical_ops = [' and ', ' or ', ' not ', ' in ', ' is ']
-        has_logical_words = any(op in value for op in logical_ops)
-        
-        # More restrictive logical check: must have logical words AND other expression indicators
-        # This prevents simple sentences like "Good credit and sufficient income" from being treated as expressions
-        has_logical = has_logical_words and (has_arithmetic or has_parentheses or has_function_call or has_comparisons or has_templates)
-        
-        # Only treat as expression if it has clear expression indicators
-        # Do NOT treat single words or simple sentences as expressions
-        is_likely_expression = (
-            has_arithmetic or 
-            has_parentheses or 
-            has_function_call or
-            has_comparisons or
-            has_templates or
-            has_logical
-        )
-        
-        # Additional checks to avoid false positives
-        # Skip if it's clearly a sentence (multiple words with spaces and no operators)
-        # BUT don't exclude template expressions even if they have spaces
-        if (' ' in value and 
-            not any(op in value for op in arithmetic_ops + comparison_ops) and 
-            not has_parentheses and 
-            not has_templates and
-            not has_function_call and
-            not has_logical):  # Updated to use the more restrictive has_logical
-            return False
-        
-        # Skip if it looks like a URL, file path, or other string literal
-        # Don't exclude template expressions or arithmetic expressions
-        if (any(pattern in value.lower() for pattern in ['http://', 'https://', '\\\\', '.com', '.org']) or 
-            ('/' in value and not has_templates and not has_arithmetic and ' ' not in value)):
-            return False
-        
-        return is_likely_expression
+        """Detect if a value should be treated as an expression to evaluate."""
+        return self._expression_parser.is_expression(value)
     
     def _evaluate_action_value(self, value: Any, context: ExecutionContext) -> Any:
-        """Evaluate an action value, handling both templates and expressions.
-        
-        Args:
-            value: Raw action value from rule
-            context: Current execution context
-            
-        Returns:
-            Evaluated value (computed if expression/template, original if literal)
-        """
-        # Only attempt evaluation for potential expressions
-        if not self._is_expression(value):
-            return value
-        
-        try:
-            value_str = str(value)
-            
-            # Handle template expressions like {{ variable }} or {{ expression }}
-            if '{{' in value_str and '}}' in value_str:
-                return self._evaluate_template_expression(value_str, context)
-            
-            # Handle direct expressions (arithmetic, comparisons, function calls)
-            else:
-                result, _ = self._evaluator._core.evaluate(value_str, context)
-                return result
-                
-        except Exception:
-            # If evaluation fails, return original value
-            # This ensures backward compatibility
-            return value
+        """Evaluate an action value, handling both templates and expressions."""
+        return self._expression_parser.evaluate_action_value(value, context)
     
     def _evaluate_template_expression(self, template: str, context: ExecutionContext) -> Any:
-        """Evaluate template expressions with variable substitution.
-        
-        Args:
-            template: Template string with {{ variable }} syntax
-            context: Current execution context
-            
-        Returns:
-            Evaluated template result
-        """
-        import re
-        
-        # Pattern to match {{ expression }} - use non-greedy match to handle nested braces
-        template_pattern = r'\{\{\s*(.*?)\s*\}\}'
-        
-        # Find all template expressions
-        matches = list(re.finditer(template_pattern, template))
-        
-        if not matches:
-            # No template expressions found, return as-is
-            return template
-        
-        # If the entire string is a single template expression, evaluate and return the result
-        if len(matches) == 1 and matches[0].group(0).strip() == template.strip():
-            expression = matches[0].group(1).strip()
-            try:
-                # Use the core evaluator which properly handles PROMPT function
-                result, _ = self._evaluator._core.evaluate(expression, context)
-                return result
-            except Exception:
-                # If evaluation fails, return the expression itself
-                return expression
-        
-        # Multiple templates or mixed content - perform string substitution
-        result = template
-        for match in reversed(matches):  # Process in reverse to maintain positions
-            expression = match.group(1).strip()
-            try:
-                # Use the core evaluator which properly handles PROMPT function
-                eval_result, _ = self._evaluator._core.evaluate(expression, context)
-                # Convert result to string for substitution
-                result = result[:match.start()] + str(eval_result) + result[match.end():]
-            except Exception:
-                # If evaluation fails, substitute with the expression itself
-                result = result[:match.start()] + expression + result[match.end():]
-        
-        return result
+        """Evaluate template expressions with variable substitution."""
+        return self._expression_parser.evaluate_template_expression(template, context)
     
     # Rule Loading Methods (delegated to RuleLoader)
     @classmethod
@@ -336,17 +206,27 @@ class Engine:
         """
         # Register with function registry (this validates against reserved keywords)
         self._function_registry.register_function(name, func, allow_unsafe)
-        # Also register with evaluator components directly (validation already done)
+        # Register with all evaluator components in one call
+        self._register_function_with_evaluators(name, func)
+    
+    def unregister_function(self, name: str) -> None:
+        """Remove a registered custom function."""
+        self._function_registry.unregister_function(name)
+        # Unregister from all evaluator components in one call
+        self._unregister_function_from_evaluators(name)
+    
+    def _register_function_with_evaluators(self, name: str, func: Callable) -> None:
+        """Register function with all evaluator components (single method to avoid duplication)."""
+        # Register with all evaluator components
         self._evaluator._core.register_function(name, func)
         self._evaluator._trace_evaluator.register_function(name, func)
         self._evaluator._execution_path_evaluator.register_function(name, func)
         # Update field extractor
         self._evaluator._update_function_registry()
     
-    def unregister_function(self, name: str) -> None:
-        """Remove a registered custom function."""
-        self._function_registry.unregister_function(name)
-        # Also unregister from evaluator components
+    def _unregister_function_from_evaluators(self, name: str) -> None:
+        """Unregister function from all evaluator components (single method to avoid duplication)."""
+        # Unregister from all evaluator components
         self._evaluator._core.unregister_function(name)
         self._evaluator._trace_evaluator.unregister_function(name)
         self._evaluator._execution_path_evaluator.unregister_function(name)
@@ -420,7 +300,7 @@ class Engine:
     def _execute_rules_iteratively(self, context: ExecutionContext) -> None:
         """Execute rules iteratively until no new rules fire (convergence)."""
         
-        for iteration in range(self._max_iterations):
+        for iteration in range(self._config.max_iterations):
             rules_fired_this_iteration = 0
             
             # Get rules that haven't fired yet
