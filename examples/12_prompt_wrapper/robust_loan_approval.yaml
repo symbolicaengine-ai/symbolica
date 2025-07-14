@@ -1,0 +1,114 @@
+rules:
+  # Standard structured rule - works great when all data is available
+  - id: standard_approval
+    priority: 100
+    condition: "credit_score > 750 and annual_income > 80000 and debt_ratio < 0.3"
+    actions:
+      approved: true
+      reason: excellent_profile
+      confidence: very_high
+      method: structured
+    description: "Standard approval for complete, high-quality applications"
+    
+  # Robust version using prompt() wrapper - handles missing/incomplete data
+  - id: robust_approval
+    priority: 95
+    condition: "prompt('Customer has strong creditworthiness (score > 700) and good income (> 50k)', 'bool')"
+    actions:
+      approved: true
+      reason: ai_assessment
+      confidence: high
+      method: hybrid_with_fallback
+    description: "Robust approval that works even with incomplete data"
+    
+  # Handle specific missing data scenarios
+  - id: missing_credit_score
+    priority: 90
+    condition: "credit_score == null and prompt('Based on payment history and income, is this a good credit risk?', 'bool')"
+    actions:
+      approved: true
+      reason: alternative_assessment
+      confidence: medium
+      requires_verification: true
+      method: llm_fallback
+    description: "Fallback when credit score is unavailable"
+    
+  # Natural language business rules that would be hard to structure
+  - id: judgment_call
+    priority: 85
+    condition: "prompt('This application has some red flags but also positive aspects. Should we approve?', 'bool')"
+    actions:
+      approved: true
+      reason: human_judgment_simulation
+      confidence: medium
+      requires_review: true
+      method: ai_judgment
+    description: "Handle complex cases requiring business judgment"
+    
+  # Legacy system integration - handle inconsistent data formats
+  - id: legacy_data_handler
+    priority: 80
+    condition: "prompt('Customer status is {customer_status} and risk level is {risk_level}. Approve loan?', 'bool')"
+    actions:
+      approved: true
+      reason: legacy_system_integration
+      confidence: medium
+      needs_manual_review: true
+      method: data_interpretation
+    description: "Handle inconsistent data from legacy systems"
+    
+  # Form validation with missing fields
+  - id: incomplete_application
+    priority: 75
+    condition: "prompt('Application is only {completion_percentage}% complete but shows {positive_indicators}. Process anyway?', 'bool')"
+    actions:
+      approved: true
+      reason: partial_application_approval
+      confidence: low
+      requires_followup: true
+      method: incomplete_data_handling
+    description: "Handle incomplete applications intelligently"
+    
+  # Risk assessment with mixed signals
+  - id: mixed_signals
+    priority: 70
+    condition: "prompt('Credit score is {credit_score}, but customer has {positive_factors} and {negative_factors}. Net assessment?', 'bool')"
+    actions:
+      approved: true
+      reason: balanced_assessment
+      confidence: medium
+      method: holistic_evaluation
+    description: "Handle applications with mixed positive/negative indicators"
+    
+  # Market-specific rules that need local knowledge
+  - id: regional_assessment
+    priority: 65
+    condition: "prompt('Customer is from {region} with income {annual_income} in {currency}. Good loan candidate for this market?', 'bool')"
+    actions:
+      approved: true
+      reason: regional_assessment
+      confidence: medium
+      method: market_specific_ai
+    description: "Market and region-specific approval logic"
+    
+  # Fallback denial rule with explanation
+  - id: robust_denial
+    priority: 60
+    condition: "prompt('Based on available information, should we deny this application?', 'bool')"
+    actions:
+      approved: false
+      reason: "{{ prompt('Explain in one sentence why this application should be denied', 'str') }}"
+      method: ai_denial_with_reasoning
+    description: "Intelligent denial with AI-generated reasoning"
+    
+  # Default fallback - should never fail
+  - id: ultimate_fallback
+    priority: 1
+    condition: "prompt('Unable to process this application normally. Should we default to manual review?', 'bool')"
+    actions:
+      approved: false
+      requires_manual_review: true
+      reason: system_processing_issue
+      escalation_priority: high
+      method: failsafe
+    description: "Ultimate failsafe that never throws errors" 
