@@ -1,14 +1,15 @@
 rules:
-  # Notification workflows
+  # Approval notification
   - id: send_approval_notification
     priority: 50
     condition: "approved == true"
     actions:
       notification_sent: true
-      notification_method: "{{ PROMPT('Best notification method for {customer_tier} customer') }}"
+      notification_method: "email"
     triggers: ["update_crm"]
     tags: ["workflow", "notification"]
   
+  # Account setup
   - id: setup_account
     priority: 45
     condition: "approved == true"
@@ -19,7 +20,17 @@ rules:
     triggers: ["order_card", "setup_online_banking"]
     tags: ["workflow", "setup"]
   
-  # Follow-up workflows
+  # Fraud case handling
+  - id: fraud_case_workflow
+    priority: 44
+    condition: "flagged_for_review == true"
+    actions:
+      case_created: true
+      case_number: "{{ generate_account_number() }}"
+      assigned_to: "fraud_team"
+    tags: ["workflow", "fraud"]
+  
+  # CRM update
   - id: update_crm
     priority: 40
     condition: "notification_sent == true"
@@ -28,6 +39,7 @@ rules:
       customer_status: "active"
     tags: ["workflow", "crm"]
   
+  # Card ordering
   - id: order_card
     priority: 35
     condition: "account_created == true"
@@ -36,10 +48,20 @@ rules:
       estimated_delivery: "{{ calculate_delivery_date() }}"
     tags: ["workflow", "card"]
   
+  # Online banking
   - id: setup_online_banking
     priority: 30
     condition: "account_created == true"
     actions:
       online_banking_enabled: true
       temporary_password_sent: true
-    tags: ["workflow", "digital"] 
+    tags: ["workflow", "digital"]
+  
+  # VIP treatment
+  - id: vip_welcome_package
+    priority: 25
+    condition: "customer_tier == 'vip' and account_created == true"
+    actions:
+      welcome_package_sent: true
+      personal_manager_assigned: true
+    tags: ["workflow", "vip"] 

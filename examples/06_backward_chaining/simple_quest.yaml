@@ -1,0 +1,98 @@
+rules:
+  # Final goals
+  - id: defeat_dragon
+    priority: 100
+    condition: "has_dragon_sword == true and (fire_resistance or 0) >= 80 and (level or 0) >= 15"
+    actions:
+      quest_completed: true
+      treasure: "Dragon's Hoard"
+    tags: ["goal", "boss"]
+  
+  - id: rescue_princess
+    priority: 95
+    condition: "has_castle_key == true and (stealth or 0) >= 70"
+    actions:
+      princess_rescued: true
+      reward: "Royal Gratitude"
+    tags: ["goal", "rescue"]
+  
+  # Equipment needed for goals
+  - id: get_dragon_sword
+    priority: 80
+    condition: "has_magic_ore == true and (gold or 0) >= 200"
+    actions:
+      has_dragon_sword: true
+    tags: ["equipment", "weapon"]
+  
+  - id: drink_fire_potion
+    priority: 70
+    condition: "(gold or 0) >= 50"
+    actions:
+      fire_resistance: 90
+    tags: ["equipment", "potion"]
+  
+  - id: get_castle_key
+    priority: 75
+    condition: "(reputation or 0) >= 50"
+    actions:
+      has_castle_key: true
+    tags: ["key_item"]
+  
+  - id: train_stealth
+    priority: 60
+    condition: "(gold or 0) >= 100"
+    actions:
+      stealth: 80
+    tags: ["skill", "training"]
+  
+  # Resource acquisition (no level dependencies)
+  - id: work_for_gold
+    priority: 50
+    condition: "true"
+    actions:
+      gold: "{{ (gold or 0) + 30 }}"
+    tags: ["work", "income"]
+  
+  - id: gain_experience
+    priority: 45
+    condition: "true"
+    actions:
+      experience: "{{ (experience or 0) + 50 }}"
+    tags: ["training", "experience"]
+  
+  - id: build_reputation
+    priority: 40
+    condition: "true"
+    actions:
+      reputation: 60
+    tags: ["quest", "reputation"]
+  
+  # Advancement (depends on accumulated resources)
+  - id: level_up_to_5
+    priority: 35
+    condition: "(experience or 0) >= 100"
+    actions:
+      level: 5
+    tags: ["advancement", "level5"]
+  
+  - id: level_up_to_10
+    priority: 30
+    condition: "(experience or 0) >= 200"
+    actions:
+      level: 10
+    tags: ["advancement", "level10"]
+  
+  - id: level_up_to_15
+    priority: 25
+    condition: "(experience or 0) >= 300"
+    actions:
+      level: 15
+    tags: ["advancement", "level15"]
+  
+  # Advanced resources (depend on level)
+  - id: find_magic_ore
+    priority: 20
+    condition: "(level or 0) >= 10"
+    actions:
+      has_magic_ore: true
+    tags: ["resource", "mining"] 

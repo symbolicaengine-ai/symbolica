@@ -35,11 +35,14 @@ def main():
     engine = Engine.from_file("business_templates.yaml")
     
     print("Loaded template evaluation rules")
-    print("Demonstrating employee performance review template")
+    print("Demonstrating dynamic template generation...")
     print()
     
-    # Employee performance data
-    employee_facts = facts(
+    # Test Case 1: High performer
+    print("Test Case 1: High Performer")
+    print("=" * 30)
+    
+    high_performer = facts(
         employee_id="EMP001",
         employee_name="Sarah Johnson",
         department="Sales",
@@ -50,27 +53,76 @@ def main():
         teamwork_score=92
     )
     
-    print(f"Processing performance review for: {employee_facts.data['employee_name']}")
-    print(f"Sales Achievement: ${employee_facts.data['sales_achieved']:,} / ${employee_facts.data['sales_target']:,}")
-    print()
+    print(f"Employee: {high_performer.data['employee_name']}")
+    print(f"Sales: ${high_performer.data['sales_achieved']:,} / ${high_performer.data['sales_target']:,} ({high_performer.data['sales_achieved']/high_performer.data['sales_target']*100:.1f}%)")
     
-    # Execute the template evaluation
-    result = engine.reason(employee_facts)
+    result = engine.reason(high_performer)
     
-    if result and result.verdict:
-        print("Generated Performance Review:")
+    if result and result.verdict and 'performance_report' in result.verdict:
+        print("\nGenerated Performance Review:")
         print("-" * 40)
-        print(result.verdict)
-    else:
-        print("No template generated - check rule conditions")
+        print(result.verdict['performance_report'])
     
-    print()
+    # Test Case 2: Average performer
+    print("\n" + "=" * 60)
+    print("Test Case 2: Average Performer")
+    print("=" * 30)
+    
+    average_performer = facts(
+        employee_id="EMP002",
+        employee_name="Mike Chen",
+        department="Sales",
+        review_period="Q4 2024",
+        sales_target=100000,
+        sales_achieved=95000,
+        quality_score=75,
+        teamwork_score=80
+    )
+    
+    print(f"Employee: {average_performer.data['employee_name']}")
+    print(f"Sales: ${average_performer.data['sales_achieved']:,} / ${average_performer.data['sales_target']:,} ({average_performer.data['sales_achieved']/average_performer.data['sales_target']*100:.1f}%)")
+    
+    result = engine.reason(average_performer)
+    
+    if result and result.verdict and 'performance_report' in result.verdict:
+        print("\nGenerated Performance Review:")
+        print("-" * 40)
+        print(result.verdict['performance_report'])
+    
+    # Test Case 3: Below expectations
+    print("\n" + "=" * 60)
+    print("Test Case 3: Below Expectations")
+    print("=" * 30)
+    
+    low_performer = facts(
+        employee_id="EMP003",
+        employee_name="Alex Turner",
+        department="Sales",
+        review_period="Q4 2024",
+        sales_target=80000,
+        sales_achieved=55000,
+        quality_score=60,
+        teamwork_score=65
+    )
+    
+    print(f"Employee: {low_performer.data['employee_name']}")
+    print(f"Sales: ${low_performer.data['sales_achieved']:,} / ${low_performer.data['sales_target']:,} ({low_performer.data['sales_achieved']/low_performer.data['sales_target']*100:.1f}%)")
+    
+    result = engine.reason(low_performer)
+    
+    if result and result.verdict and 'performance_report' in result.verdict:
+        print("\nGenerated Performance Review:")
+        print("-" * 40)
+        print(result.verdict['performance_report'])
+    
+    print("\n" + "=" * 60)
     print("Template Features Demonstrated:")
-    print("- Variable substitution: employee name, ID, department")
-    print("- Mathematical expressions: sales calculations, scoring averages")
-    print("- Conditional logic: performance ratings based on metrics")
-    print("- Function calls: min() for score capping")
-    print("- Complex nested expressions: multi-level conditional logic")
+    print("✓ Variable substitution: employee name, ID, department")
+    print("✓ Mathematical expressions: sales calculations, scoring averages")
+    print("✓ Conditional logic: performance ratings based on metrics")
+    print("✓ Dynamic recommendations: based on calculated scores")
+    print("✓ Complex nested expressions: multi-level conditional logic")
+    print("✓ Formatted output: professional business document structure")
 
 
 if __name__ == "__main__":

@@ -16,11 +16,12 @@ rules:
       tighten_security: true
     tags: ["monitoring", "security"]
   
-  # System health
+  # System health with proper temporal handling
   - id: ai_system_slow
     priority: 65
-    condition: "recent_avg('ai_response_time', 300) > 2000"  # >2s average
+    condition: "recent_count('ai_response_time', 300) > 10 and recent_avg('ai_response_time', 300) > 2000"
     actions:
       alert: "AI system response slow"
       fallback_to_traditional: true
+      avg_response_time: "{{ recent_avg('ai_response_time', 300) or 0 }}"
     tags: ["monitoring", "ai", "performance"] 
