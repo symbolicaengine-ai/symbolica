@@ -43,6 +43,11 @@ def main():
     print("\nStep-by-step workflow:")
     parse_workflow_steps(result.reasoning)
     
+    # Show priority insights for complex cases
+    if len(result.fired_rules) != len(result.get_winning_rules()):
+        print(f"\nPriority Resolution: {len(result.fired_rules)} rules fired, {len(result.get_winning_rules())} contributed to final verdict")
+        print("Use result.explain_with_priorities() to see what was overridden")
+    
     # Test case 2: Standard customer workflow
     print("\nTest 2: Standard Customer Workflow")
     standard_customer = facts(
@@ -57,6 +62,11 @@ def main():
     print(f"Rules fired: {result.fired_rules}")
     print("\nStep-by-step workflow:")
     parse_workflow_steps(result.reasoning)
+    
+    # Show priority insights for complex cases
+    if len(result.fired_rules) != len(result.get_winning_rules()):
+        print(f"\nPriority Resolution: {len(result.fired_rules)} rules fired, {len(result.get_winning_rules())} contributed to final verdict")
+        print("Use result.explain_with_priorities() to see what was overridden")
     
     # Test case 3: Rejected customer (no workflow)
     print("\nTest 3: Rejected Customer (No Workflow)")
@@ -82,17 +92,21 @@ def parse_workflow_steps(reasoning):
     lines = reasoning.split('\n')
     step = 1
     for line in lines:
-        if line.strip().startswith('✓'):
-            parts = line.split(':', 1)
-            if len(parts) > 1:
-                rule_part = parts[1].strip()
-                if 'triggered by' in rule_part:
-                    rule_info = rule_part.split('(triggered by')[0].strip()
-                    trigger_info = rule_part.split('(triggered by')[1].strip(')')
-                    print(f"  Step {step}: {rule_info} (triggered by {trigger_info})")
-                else:
-                    print(f"  Step {step}: {rule_part}")
-                step += 1
+        line = line.strip()
+        if line and ':' in line:
+            # Extract rule name and details
+            rule_name = line.split(':')[0].strip()
+            rule_details = ':'.join(line.split(':')[1:]).strip()
+            
+            if 'triggered by' in rule_details:
+                # Extract the triggered by information
+                main_part = rule_details.split('(triggered by')[0].strip()
+                trigger_part = rule_details.split('(triggered by')[1].strip(')')
+                print(f"  Step {step}: {rule_name} - {main_part} (triggered by {trigger_part})")
+            else:
+                # Initial rule (not triggered by another)
+                print(f"  Step {step}: {rule_name} - {rule_details}")
+            step += 1
 
 def analyze_workflow_paths(engine):
     """Analyze possible workflow paths."""

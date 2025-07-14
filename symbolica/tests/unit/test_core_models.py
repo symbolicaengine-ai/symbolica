@@ -275,7 +275,7 @@ class TestExecutionResult:
             verdict={'approved': True},
             fired_rules=['rule1', 'rule2'],
             execution_time_ms=15.0,
-            reasoning="✓ rule1: condition was met\n✓ rule2: criteria satisfied"
+            reasoning="rule1: condition was met\n rule2: criteria satisfied"
         )
         
         assert "rule1: condition was met" in result.reasoning

@@ -1,6 +1,6 @@
 rules:
   # Premium Customer Qualification (Complex ALL with nested ANY)
-  - id: "premium_customer_qualification"
+  - id: premium_customer_qualification
     priority: 100
     condition:
       all:
@@ -10,7 +10,7 @@ rules:
             - "credit_score >= 700"
             - all:
                 - "credit_score >= 650"
-                - "previous_insurance == True"
+                - "previous_insurance == true"
                 - "coverage_lapse_months <= 6"
         - not:
             any:
@@ -23,10 +23,12 @@ rules:
       base_premium: 1200
       discount_rate: 0.15
       discounts: ["good_driver", "premium_customer"]
+      surcharge_rate: 0.0
+      credit_score_factor: 1.0
     tags: ["premium", "low_risk"]
-
+  
   # Standard Customer with Good Record
-  - id: "standard_good_driver"
+  - id: standard_good_driver
     priority: 90
     condition:
       all:
@@ -37,7 +39,7 @@ rules:
         - any:
             - "credit_score >= 650"
             - all:
-                - "previous_insurance == True"
+                - "previous_insurance == true"
                 - "coverage_lapse_months <= 12"
         - not:
             all:
@@ -51,10 +53,12 @@ rules:
       base_premium: 1800
       discount_rate: 0.10
       discounts: ["good_driver"]
+      surcharge_rate: 0.0
+      credit_score_factor: 1.0
     tags: ["standard", "medium_risk"]
-
-  # Young Driver Special Consideration (Complex nested conditions)
-  - id: "young_driver_special"
+  
+  # Young Driver Special Consideration
+  - id: young_driver_special
     priority: 85
     condition:
       all:
@@ -72,7 +76,7 @@ rules:
                 - "accidents_last_3_years <= 1"
                 - "tickets_last_3_years <= 1"
                 - "credit_score >= 720"
-                - "previous_insurance == True"
+                - "previous_insurance == true"
         - not:
             any:
               - "vehicle_type == 'sports_car'"
@@ -86,128 +90,12 @@ rules:
       discount_rate: 0.05
       discounts: ["good_student", "young_professional"]
       special_conditions: ["defensive_driving_course_recommended"]
+      surcharge_rate: 0.0
+      credit_score_factor: 1.0
     tags: ["young_driver", "special_consideration"]
-
-  # Senior Driver Qualification
-  - id: "senior_driver_qualification"
-    priority: 80
-    condition:
-      all:
-        - "age >= 65"
-        - any:
-            - all:
-                - "driving_experience_years >= 40"
-                - "accidents_last_3_years == 0"
-                - "tickets_last_3_years <= 1"
-            - all:
-                - "driving_experience_years >= 30"
-                - "accidents_last_3_years == 0"
-                - "tickets_last_3_years == 0"
-                - "annual_mileage <= 8000"
-        - not:
-            any:
-              - "vehicle_type == 'sports_car'"
-              - "vehicle_type == 'motorcycle'"
-              - "annual_mileage > 15000"
-    actions:
-      status: "approved"
-      premium_tier: "senior"
-      risk_level: "low_medium"
-      base_premium: 1500
-      discount_rate: 0.12
-      discounts: ["senior_driver", "low_mileage"]
-      special_conditions: ["annual_vision_test_required"]
-    tags: ["senior", "experienced"]
-
-  # Commercial Vehicle Approval (Complex business logic)
-  - id: "commercial_vehicle_approval"
-    priority: 95
-    condition:
-      all:
-        - "vehicle_type == 'commercial_truck'"
-        - "commercial_license == True"
-        - "years_commercial_driving >= 5"
-        - any:
-            - all:
-                - "accidents_last_3_years == 0"
-                - "tickets_last_3_years <= 1"
-            - all:
-                - "accidents_last_3_years <= 1"
-                - "tickets_last_3_years == 0"
-                - "driving_experience_years >= 20"
-        - not:
-            any:
-              - "annual_mileage > 100000"
-              - all:
-                  - "age < 25"
-                  - "years_commercial_driving < 10"
-    actions:
-      status: "approved"
-      premium_tier: "commercial"
-      risk_level: "medium"
-      base_premium: 4500
-      discount_rate: 0.08
-      discounts: ["commercial_experience", "clean_record"]
-      special_conditions: ["annual_vehicle_inspection", "fleet_safety_program"]
-    tags: ["commercial", "professional"]
-
-  # High-Risk Vehicle Surcharge (Multiple risk factors)
-  - id: "high_risk_vehicle_surcharge"
-    priority: 70
-    condition:
-      any:
-        - all:
-            - "vehicle_type == 'sports_car'"
-            - "vehicle_value > 40000"
-            - any:
-                - "age < 30"
-                - "accidents_last_3_years > 0"
-        - all:
-            - "vehicle_type == 'motorcycle'"
-            - any:
-                - "age < 35"
-                - "driving_experience_years < 10"
-        - all:
-            - "vehicle_type == 'luxury_suv'"
-            - "vehicle_value > 60000"
-            - "annual_mileage > 20000"
-    actions:
-      surcharge_rate: 0.25
-      surcharges: ["high_risk_vehicle"]
-      special_conditions: ["enhanced_coverage_required"]
-    tags: ["surcharge", "high_risk_vehicle"]
-
-  # Multi-Factor Discount Qualification
-  - id: "multi_factor_discount"
-    priority: 60
-    condition:
-      all:
-        - "accidents_last_3_years == 0"
-        - "tickets_last_3_years == 0"
-        - any:
-            - all:
-                - "marital_status == 'married'"
-                - "age >= 30"
-                - "credit_score >= 700"
-            - all:
-                - "education == 'college_graduate'"
-                - "occupation == 'engineer'"
-                - "previous_insurance == True"
-            - all:
-                - "location == 'suburban'"
-                - "annual_mileage <= 10000"
-                - "vehicle_age >= 3"
-        - not:
-            any:
-              - "coverage_lapse_months > 0"
-              - "vehicle_type == 'sports_car'"
-    actions:
-      additional_discount_rate: 0.05
-      discounts: ["multi_factor_bonus"]
-    tags: ["discount", "low_risk"]
-
-  # High-Risk Denial Conditions (Complex exclusions)
-  - id: "high_risk_denial"
+  
+  # High-Risk Denial Conditions
+  - id: high_risk_denial
     priority: 110
     condition:
       any:
@@ -223,51 +111,47 @@ rules:
                 - "tickets_last_3_years >= 3"
                 - "credit_score < 500"
         - all:
-            - "previous_insurance == False"
+            - "previous_insurance == false"
             - "coverage_lapse_months > 24"
             - any:
                 - "accidents_last_3_years >= 2"
                 - "age < 25"
-        - not:
-            all:
-              - "commercial_license == True"
-              - "vehicle_type == 'commercial_truck'"
-              - "years_commercial_driving >= 5"
     actions:
       status: "denied"
       denial_reasons: ["high_risk_profile", "unacceptable_driving_record"]
     tags: ["denial", "high_risk"]
-
-  # Credit Score Impact (Graduated conditions)
-  - id: "credit_score_impact"
-    priority: 50
+  
+  # Multi-Factor Discount Qualification
+  - id: multi_factor_discount
+    priority: 60
     condition:
-      any:
-        - all:
-            - "credit_score >= 750"
-            - "previous_insurance == True"
-            - "coverage_lapse_months <= 3"
-        - all:
-            - "credit_score >= 650"
-            - "credit_score < 750"
-            - any:
-                - "age >= 30"
+      all:
+        - "accidents_last_3_years == 0"
+        - "tickets_last_3_years == 0"
+        - any:
+            - all:
                 - "marital_status == 'married'"
+                - "age >= 30"
+                - "credit_score >= 700"
+            - all:
                 - "education == 'college_graduate'"
-        - all:
-            - "credit_score >= 600"
-            - "credit_score < 650"
-            - not:
-                any:
-                  - "accidents_last_3_years > 0"
-                  - "tickets_last_3_years > 1"
-                  - "coverage_lapse_months > 6"
+                - "occupation == 'engineer'"
+                - "previous_insurance == true"
+            - all:
+                - "location == 'suburban'"
+                - "annual_mileage <= 10000"
+                - "vehicle_age >= 3"
+        - not:
+            any:
+              - "coverage_lapse_months > 0"
+              - "vehicle_type == 'sports_car'"
     actions:
-      credit_score_factor: "{{ 1.0 if credit_score >= 750 else (1.1 if credit_score >= 650 else 1.2) }}"
-    tags: ["credit_adjustment"]
-
-  # Comprehensive Risk Assessment (All factors combined)
-  - id: "comprehensive_risk_assessment"
+      additional_discount_rate: 0.05
+      discounts: ["multi_factor_bonus"]
+    tags: ["discount", "low_risk"]
+  
+  # Comprehensive Risk Assessment (Fallback)
+  - id: comprehensive_risk_assessment
     priority: 40
     condition:
       all:
@@ -283,7 +167,7 @@ rules:
                 - "accidents_last_3_years <= 1"
                 - "tickets_last_3_years <= 2"
             - all:
-                - "previous_insurance == True"
+                - "previous_insurance == true"
                 - "coverage_lapse_months <= 12"
                 - "credit_score >= 600"
                 - not:
@@ -295,12 +179,15 @@ rules:
       premium_tier: "standard_risk"
       risk_level: "medium"
       base_premium: 2000
+      discount_rate: 0.0
+      surcharge_rate: 0.0
+      credit_score_factor: 1.0
     tags: ["standard", "fallback"]
-
-  # Final Premium Calculation (Applies to all approved cases)
-  - id: "final_premium_calculation"
+  
+  # Final Premium Calculation
+  - id: final_premium_calculation
     priority: 10
     condition: "status == 'approved'"
     actions:
-      total_premium: "{{ base_premium * (1 - discount_rate + surcharge_rate) * credit_score_factor }}"
+      total_premium: "{{ base_premium * (1 - discount_rate + surcharge_rate + (additional_discount_rate or 0)) * credit_score_factor }}"
     tags: ["calculation", "final"] 

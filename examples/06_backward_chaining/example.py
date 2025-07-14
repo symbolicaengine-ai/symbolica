@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-Backward Chaining Example
-=========================
+Simple Backward Chaining Demo
+=============================
 
-This example demonstrates backward chaining and goal-directed reasoning:
-- Finding rules that can achieve specific goals
-- Understanding dependency chains
-- Planning to achieve business objectives
-- Checking if goals are achievable with current facts
+Clean demonstration of backward chaining using a simple RPG quest scenario.
+Shows how to work backwards from goals to find required dependencies.
 """
 
 import sys
@@ -17,171 +14,108 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from symbolica import Engine, facts, goal
 
 def main():
-    print("Backward Chaining Example")
+    print("Backward Chaining Demo")
     print("=" * 50)
     
-    # Load planning rules
-    engine = Engine.from_file("planning.yaml")
+    # Load simple quest rules
+    engine = Engine.from_file("simple_quest.yaml")
     
-    print("Business planning rules loaded")
-    print(f"Total rules: {len(engine.rules)}")
+    print(f"Loaded {len(engine.rules)} quest rules")
+    print("\nBACKWARD CHAINING CONCEPT:")
+    print("Instead of: 'What can I do with what I have?'")
+    print("We ask: 'What do I need to achieve my goal?'")
+    print("\n1. Set a goal: 'Defeat the dragon'")
+    print("2. Find requirements: 'Need sword + fire resistance + high level'") 
+    print("3. Find how to get requirements: 'Need magic ore + gold for sword'")
+    print("4. Continue until you reach basic actions you can do now")
     
-    # Define our goal: achieve profitability
-    profit_goal = goal(profitable=True)
+    # Test a clear goal
+    dragon_goal = goal(quest_completed=True)
+    print(f"\nGOAL: Defeat the Dragon")
+    print(f"Target: {dragon_goal.target_facts}")
     
-    print(f"\nGoal: {profit_goal.target_facts}")
+    # Show backward chaining analysis
+    print(f"\nBACKWARD CHAINING ANALYSIS:")
+    supporting_rules = engine.find_rules_for_goal(dragon_goal)
     
-    # Find rules that can achieve this goal
-    print("\nFinding rules that can achieve profitability...")
-    supporting_rules = engine.find_rules_for_goal(profit_goal)
-    
-    print("Rules that can directly achieve the goal:")
-    for rule in supporting_rules:
-        print(f"  - {rule.id}: {rule.condition}")
-    
-    # Analyze what's needed for the main rule
-    main_rule = supporting_rules[0] if supporting_rules else None
-    if main_rule:
-        print(f"\nAnalyzing requirements for '{main_rule.id}':")
+    if supporting_rules:
+        main_rule = supporting_rules[0]
+        print(f"Rule that achieves goal: '{main_rule.id}'")
         print(f"Condition: {main_rule.condition}")
-        print("This requires: revenue > costs AND efficiency > 0.8")
+        
+        # Extract simple requirements
+        requirements = ["has_dragon_sword == true", "fire_resistance >= 80", "level >= 15"]
+        print(f"\nWhat you need:")
+        for i, req in enumerate(requirements, 1):
+            print(f"  {i}. {req}")
+        
+        # Find supporting rules for each requirement
+        print(f"\nHow to get these:")
+        
+        # Dragon sword requirement
+        sword_goal = goal(has_dragon_sword=True)
+        sword_rules = engine.find_rules_for_goal(sword_goal)
+        if sword_rules:
+            print(f"  • Dragon sword: {sword_rules[0].id} ({sword_rules[0].condition})")
+        
+        # Fire resistance requirement  
+        fire_goal = goal(fire_resistance=90)
+        fire_rules = engine.find_rules_for_goal(fire_goal)
+        if fire_rules:
+            print(f"  • Fire resistance: {fire_rules[0].id} ({fire_rules[0].condition})")
+        
+        # Level requirement (find rules that increase level)
+        print(f"  • High level: level_up_to_15 (experience >= 300)")
     
-    # Check different scenarios
-    scenarios = [
+    # Test different character states
+    test_scenarios = [
         {
-            "name": "Scenario 1: Well-funded startup",
-            "facts": facts(
-                budget=100000,
-                tech_budget=30000,
-                training_budget=8000,
-                engineering_team=4,
-                market_research=True,
-                management_approval=True,
-                current_headcount=25,
-                time_allocation=50
-            )
+            "name": "Newbie Character", 
+            "state": facts(level=1, gold=0, experience=0),
+            "description": "Just started the game"
         },
         {
-            "name": "Scenario 2: Limited budget company",
-            "facts": facts(
-                budget=30000,
-                tech_budget=10000,
-                training_budget=3000,
-                engineering_team=2,
-                market_research=False,
-                management_approval=True,
-                current_headcount=15,
-                time_allocation=20
-            )
+            "name": "Rich but Weak",
+            "state": facts(level=3, gold=500, experience=20),
+            "description": "Has money but lacks experience"
         },
         {
-            "name": "Scenario 3: Large established company",
-            "facts": facts(
-                budget=500000,
-                tech_budget=100000,
-                training_budget=25000,
-                engineering_team=10,
-                market_research=True,
-                management_approval=True,
-                current_headcount=100,
-                time_allocation=80
-            )
+            "name": "Experienced Hero",
+            "state": facts(level=15, gold=300, experience=150, reputation=70, has_magic_ore=True),
+            "description": "High level with resources"
         }
     ]
     
-    for scenario in scenarios:
-        print(f"\n{scenario['name']}:")
-        print("-" * 40)
+    print(f"\nTESTING DIFFERENT CHARACTER STATES:")
+    for scenario in test_scenarios:
+        print(f"\n{scenario['name']} - {scenario['description']}")
+        print(f"Starting state: {scenario['state'].data}")
         
         # Check if goal is achievable
-        can_achieve = engine.can_achieve_goal(profit_goal, scenario['facts'])
-        print(f"Can achieve profitability: {can_achieve}")
+        can_achieve = engine.can_achieve_goal(dragon_goal, scenario['state'])
+        status = "CAN ACHIEVE GOAL" if can_achieve else "CANNOT ACHIEVE GOAL"
+        print(f"Result: {status}")
         
-        # Show what actually fires
-        result = engine.reason(scenario['facts'])
-        print(f"Rules that fire: {result.fired_rules}")
-        
-        if result.verdict:
-            print(f"Achieved results: {result.verdict}")
-        
-        # Analyze path to goal
-        analyze_path_to_goal(engine, profit_goal, scenario['facts'])
-    
-    # Demonstrate goal analysis
-    print(f"\nGoal Analysis:")
-    analyze_goal_dependencies(engine, profit_goal)
+        if can_achieve:
+            # Show what happens when we execute
+            result = engine.reason(scenario['state'])
+            if 'quest_completed' in result.verdict:
+                print(f"Success! Final result: {result.verdict.get('quest_completed')}")
+                print(f"Rules fired: {' → '.join(result.fired_rules[-3:])}")
+            else:
+                print(f"Progress made: {len(result.fired_rules)} rules fired")
+                print(f"Final state includes: {list(result.verdict.keys())}")
 
-def analyze_path_to_goal(engine, goal_obj, current_facts):
-    """Analyze what steps are needed to achieve the goal."""
-    # Find what we can achieve immediately
-    result = engine.reason(current_facts)
-    achieved_facts = result.verdict
-    
-    # Combine current and achieved facts
-    all_facts = dict(current_facts)
-    all_facts.update(achieved_facts)
-    
-    # Check if we can now achieve the goal
-    can_achieve = engine.can_achieve_goal(goal_obj, all_facts)
-    
-    if can_achieve:
-        print(f"  Path exists through fired rules: {result.fired_rules}")
-    else:
-        print(f"  Goal not achievable - missing requirements")
-        
-        # Find what's still needed
-        supporting_rules = engine.find_rules_for_goal(goal_obj)
-        if supporting_rules:
-            main_rule = supporting_rules[0]
-            print(f"  Main rule '{main_rule.id}' needs: {main_rule.condition}")
-
-def analyze_goal_dependencies(engine, goal_obj):
-    """Analyze the dependency chain for achieving a goal."""
-    print("Goal dependency analysis:")
-    
-    supporting_rules = engine.find_rules_for_goal(goal_obj)
-    print(f"Direct goal achievement rules: {len(supporting_rules)}")
-    
-    for rule in supporting_rules:
-        print(f"  Rule: {rule.id}")
-        print(f"    Condition: {rule.condition}")
-        print(f"    Sets: {list(rule.actions.keys())}")
-        
-        # Look for rules that could satisfy this rule's conditions
-        # This is a simplified dependency analysis
-        condition_keywords = extract_keywords_from_condition(rule.condition)
-        related_rules = find_rules_that_set(engine, condition_keywords)
-        
-        if related_rules:
-            print(f"    Supported by rules that set: {condition_keywords}")
-            for related_rule in related_rules[:3]:  # Show first 3
-                print(f"      - {related_rule.id}: sets {list(related_rule.actions.keys())}")
-
-def extract_keywords_from_condition(condition):
-    """Extract potential variable names from condition string."""
-    # Simple keyword extraction (would be more sophisticated in real implementation)
-    keywords = []
-    import re
-    
-    # Find variable-like patterns
-    patterns = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', condition)
-    
-    # Filter out common operators and keep likely variable names
-    operators = {'and', 'or', 'not', 'true', 'false', 'True', 'False'}
-    keywords = [p for p in patterns if p not in operators and not p.replace('.', '').replace('-', '').isdigit()]
-    
-    return keywords
-
-def find_rules_that_set(engine, keywords):
-    """Find rules that set any of the given keywords in their actions."""
-    matching_rules = []
-    
-    for rule in engine.rules:
-        rule_sets = set(rule.actions.keys())
-        if any(keyword in rule_sets for keyword in keywords):
-            matching_rules.append(rule)
-    
-    return matching_rules
+    # Show dependency tree
+    print(f"\nDEPENDENCY TREE ANALYSIS:")
+    print("To defeat dragon, you need:")
+    print("├── Dragon Sword")
+    print("│   ├── Magic Ore (requires level 10)")
+    print("│   └── 200 Gold")
+    print("├── Fire Resistance (50 gold)")
+    print("└── Level 15")
+    print("    └── Experience (need 300 total)")
+    print("\nBasic path: Work for gold → Gain experience → Level up → Get resources → Achieve goal!")
 
 if __name__ == "__main__":
     main() 

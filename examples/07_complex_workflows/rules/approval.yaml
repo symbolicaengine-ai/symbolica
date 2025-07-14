@@ -1,28 +1,47 @@
 rules:
-  # Initial application analysis
+  # AI risk assessment
   - id: ai_risk_assessment
     priority: 100
-    condition: "PROMPT('Analyze credit risk for: {application_data}', 'int') <= 3"
+    condition: "application_data != null and PROMPT('Rate credit risk 1-10 for: {application_data}', 'int') <= 3"
     actions:
-      ai_risk_score: "{{ LAST_PROMPT_RESULT }}"
       ai_approved: true
       assessment_method: "ai_analysis"
-    tags: ["ai", "risk", "initial"]
+    tags: ["ai", "risk"]
   
-  - id: traditional_risk_check
+  # Traditional risk assessment
+  - id: traditional_low_risk
     priority: 90
     condition: "ai_approved != true and risk_score(credit_score, income, debt_ratio) == 'low'"
     actions:
-      traditional_risk_approved: true
+      traditional_approved: true
       assessment_method: "traditional"
     tags: ["traditional", "risk"]
   
-  # Combined approval logic
+  - id: traditional_medium_risk
+    priority: 85
+    condition: "ai_approved != true and traditional_approved != true and risk_score(credit_score, income, debt_ratio) == 'medium'"
+    actions:
+      medium_approved: true
+      assessment_method: "traditional_medium"
+    tags: ["traditional", "medium_risk"]
+  
+  # Final approval
   - id: final_approval
     priority: 80
-    condition: "(ai_approved == true or traditional_risk_approved == true) and fraud_check(loan_amount, avg_transaction) == false"
+    condition: "(ai_approved == true or traditional_approved == true or medium_approved == true) and fraud_check(loan_amount, avg_transaction) == false"
     actions:
       approved: true
       approval_timestamp: "{{ current_timestamp() }}"
     triggers: ["send_approval_notification", "setup_account"]
-    tags: ["approval", "final"] 
+    tags: ["approval", "final"]
+  
+  # Fraud detection
+  - id: fraud_rejection
+    priority: 75
+    condition: "fraud_check(loan_amount, avg_transaction) == true"
+    actions:
+      approved: false
+      flagged_for_review: true
+      rejection_reason: "potential_fraud"
+    triggers: ["fraud_case_workflow"]
+    tags: ["fraud", "rejection"] 
