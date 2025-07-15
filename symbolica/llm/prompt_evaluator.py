@@ -23,29 +23,23 @@ logger = logging.getLogger(__name__)
 class PromptSanitizer:
     """Enhanced prompt sanitization to prevent injection attacks."""
     
-    # Expanded injection patterns for better security
+    # More specific injection patterns for business environments
     INJECTION_PATTERNS = [
-        # Basic instruction injection
-        r"(?i)\b(ignore|disregard|forget)\s+(previous|prior|above|all)\s+(instructions?|rules?|context)",
-        r"(?i)\b(new|updated|revised)\s+(instructions?|rules?|system)\s*:",
-        r"(?i)\b(system|assistant|user)\s*:\s*",
-        r"(?i)\bpretend\s+(you\s+are|to\s+be)",
-        r"(?i)\b(act|behave)\s+as\s+(if|a|an)",
+        # Critical instruction injection (more specific)
+        r"(?i)\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above)\s+(instructions?|rules?|context)",
+        r"(?i)\b(new|updated|revised)\s+(system\s+)?(instructions?|rules?)\s*:",
+        r"(?i)\b(system|assistant|user)\s*:\s*[^{]",  # Avoid matching {feedback} variables
+        r"(?i)\bpretend\s+(you\s+are|to\s+be)\s+(not|another|different)",
         
-        # Advanced injection attempts
-        r"(?i)\b(override|bypass|disable)\s+(safety|security|filters?)",
+        # Advanced injection attempts (keep most critical ones)
+        r"(?i)\b(override|bypass|disable)\s+(all\s+)?(safety|security|filters?)",
         r"(?i)\b(jailbreak|prompt\s+injection|system\s+prompt)",
         r"(?i)\b(developer\s+mode|admin\s+mode|god\s+mode)",
         r"(?i)\b(execute|run)\s+(command|code|script)",
         
-        # Multi-turn manipulation
-        r"(?i)\bprevious\s+(conversation|chat|messages?)",
-        r"(?i)\bchange\s+(topic|subject|context)",
-        r"(?i)\blet\'s\s+(talk\s+about|discuss)\s+something\s+else",
-        
-        # Role confusion
-        r"(?i)\bi\s+am\s+(the\s+)?(assistant|ai|system|admin)",
-        r"(?i)\byou\s+are\s+(now\s+)?(a\s+)?(human|person|user)",
+        # Role confusion (more specific)
+        r"(?i)\bi\s+am\s+(the\s+)?(assistant|ai|system|admin)\b",
+        r"(?i)\byou\s+are\s+(now\s+)?(a\s+)?(human|person|user)\b",
         
         # Code injection attempts
         r"```[^`]*```",  # Code blocks
@@ -62,9 +56,9 @@ class PromptSanitizer:
         
         threats_detected = []
         
-        # Length check
-        if len(prompt) > 2000:
-            prompt = prompt[:2000] + "..."
+        # Length check (more reasonable for business prompts)
+        if len(prompt) > 5000:
+            prompt = prompt[:5000] + "..."
             threats_detected.append("length_limit_exceeded")
         
         # Check for injection patterns
@@ -73,9 +67,9 @@ class PromptSanitizer:
                 threats_detected.append("injection_pattern_detected")
                 break
         
-        # Check for suspicious character density
-        special_chars = len([c for c in prompt if c in '<>{}[]"`\'\\$'])
-        if special_chars > len(prompt) * 0.2:  # More than 20% special chars
+        # Check for suspicious character density (more lenient for business prompts)
+        special_chars = len([c for c in prompt if c in '<>{}[]"`\\$'])  # Removed single quotes and added backslash
+        if special_chars > len(prompt) * 0.4:  # More than 40% special chars (more lenient)
             threats_detected.append("high_special_char_density")
         
         # Basic sanitization
@@ -313,11 +307,12 @@ class PromptEvaluator:
                 }
                 self.security_events.append(security_event)
                 
-                logger.warning(f"Security threats detected in PROMPT()", extra={
+                logger.warning(f"Security threats detected in PROMPT(): {', '.join(security_threats)}", extra={
                     'execution_id': execution_id,
                     'threats': security_threats,
                     'rule_id': rule_id,
-                    'user_id': user_id
+                    'user_id': user_id,
+                    'prompt_preview': filled_prompt[:100] + "..." if len(filled_prompt) > 100 else filled_prompt
                 })
             
             # Execute LLM call with tracing
