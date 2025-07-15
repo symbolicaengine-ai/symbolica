@@ -16,6 +16,36 @@ if TYPE_CHECKING:
     from ...core.interfaces import ConditionEvaluator
 
 
+class CircularDependencyInfo:
+    """Information about detected circular dependencies."""
+    
+    def __init__(self, cycle_chain: List[str], field_dependencies: Dict[str, Set[str]]):
+        self.cycle_chain = cycle_chain
+        self.field_dependencies = field_dependencies
+    
+    def __str__(self):
+        cycle_str = " -> ".join(self.cycle_chain + [self.cycle_chain[0]])
+        
+        details = []
+        for i in range(len(self.cycle_chain)):
+            current = self.cycle_chain[i]
+            next_rule = self.cycle_chain[(i + 1) % len(self.cycle_chain)]
+            
+            # Find the fields that create this dependency
+            if current in self.field_dependencies:
+                shared_fields = []
+                for field in self.field_dependencies[current]:
+                    if field in self.field_dependencies.get(next_rule, set()):
+                        shared_fields.append(field)
+                
+                if shared_fields:
+                    details.append(f"  {current} depends on {next_rule} via fields: {', '.join(shared_fields)}")
+                else:
+                    details.append(f"  {current} -> {next_rule}")
+        
+        return f"Circular dependency detected: {cycle_str}\nDetails:\n" + "\n".join(details)
+
+
 class DAGStrategy:
     """Execution strategy using dependency analysis and topological sorting."""
     
@@ -45,11 +75,14 @@ class DAGStrategy:
         
         try:
             # Build dependency graph
-            dependency_graph = self._build_dependency_graph(rules)
+            dependency_graph, field_dependencies = self._build_dependency_graph(rules)
             
-            # Check for cycles
-            if self._has_cycles(dependency_graph):
-                raise DAGError("Circular dependencies detected in rule set")
+            # Check for cycles with detailed information
+            cycle_info = self._find_cycles_with_details(dependency_graph, field_dependencies)
+            if cycle_info:
+                detailed_error = f"Circular dependencies detected in rule set:\n\n{cycle_info}"
+                self.logger.error(detailed_error)
+                raise DAGError(detailed_error)
             
             # Perform topological sort with priority weighting
             ordered_rules = self._topological_sort_with_priority(rules, dependency_graph)
@@ -63,14 +96,16 @@ class DAGStrategy:
             else:
                 raise DAGError(f"Failed to compute DAG ordering: {str(e)}")
     
-    def _build_dependency_graph(self, rules: List['Rule']) -> Dict[str, Set[str]]:
+    def _build_dependency_graph(self, rules: List['Rule']) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
         """Build dependency graph based on field usage.
         
         Args:
             rules: Rules to analyze
             
         Returns:
-            Dependency graph mapping rule_id -> set of dependent rule_ids
+            Tuple of (dependency_graph, field_dependencies)
+            - dependency_graph: rule_id -> set of dependent rule_ids
+            - field_dependencies: rule_id -> set of required fields
         """
         # Extract fields for each rule
         rule_inputs = {}  # rule_id -> set of input fields
@@ -100,10 +135,12 @@ class DAGStrategy:
         
         # Build dependency graph
         dependencies = defaultdict(set)
+        field_dependencies = {}
         
         for rule in rules:
             rule_id = rule.id
             required_fields = rule_inputs.get(rule_id, set())
+            field_dependencies[rule_id] = required_fields
             
             # Find rules that produce required fields
             for other_rule in rules:
@@ -116,7 +153,56 @@ class DAGStrategy:
                 if required_fields & other_outputs:
                     dependencies[rule_id].add(other_rule.id)
         
-        return dict(dependencies)
+        return dict(dependencies), field_dependencies
+    
+    def _find_cycles_with_details(self, graph: Dict[str, Set[str]], 
+                                 field_dependencies: Dict[str, Set[str]]) -> Optional[CircularDependencyInfo]:
+        """Find cycles in dependency graph with detailed information.
+        
+        Args:
+            graph: Dependency graph
+            field_dependencies: Field dependencies for each rule
+            
+        Returns:
+            CircularDependencyInfo if cycles exist, None otherwise
+        """
+        # Three-color DFS for cycle detection with path tracking
+        WHITE, GRAY, BLACK = 0, 1, 2
+        colors = {node: WHITE for node in graph}
+        path = []
+        
+        def dfs(node: str) -> Optional[List[str]]:
+            if colors[node] == GRAY:
+                # Found a back edge - extract the cycle
+                cycle_start = path.index(node)
+                cycle_chain = path[cycle_start:]
+                return cycle_chain
+            
+            if colors[node] == BLACK:
+                return None  # Already processed
+            
+            colors[node] = GRAY
+            path.append(node)
+            
+            # Visit neighbors
+            for neighbor in graph.get(node, set()):
+                if neighbor in colors:
+                    cycle = dfs(neighbor)
+                    if cycle:
+                        return cycle
+            
+            colors[node] = BLACK
+            path.pop()
+            return None
+        
+        # Check each unvisited node
+        for node in graph:
+            if colors[node] == WHITE:
+                cycle_chain = dfs(node)
+                if cycle_chain:
+                    return CircularDependencyInfo(cycle_chain, field_dependencies)
+        
+        return None
     
     def _has_cycles(self, graph: Dict[str, Set[str]]) -> bool:
         """Check if dependency graph has cycles using DFS.
@@ -127,33 +213,9 @@ class DAGStrategy:
         Returns:
             True if cycles exist, False otherwise
         """
-        # Three-color DFS for cycle detection
-        WHITE, GRAY, BLACK = 0, 1, 2
-        colors = {node: WHITE for node in graph}
-        
-        def dfs(node: str) -> bool:
-            if colors[node] == GRAY:
-                return True  # Back edge found - cycle detected
-            if colors[node] == BLACK:
-                return False  # Already processed
-            
-            colors[node] = GRAY
-            
-            # Visit neighbors
-            for neighbor in graph.get(node, set()):
-                if neighbor in colors and dfs(neighbor):
-                    return True
-            
-            colors[node] = BLACK
-            return False
-        
-        # Check each unvisited node
-        for node in graph:
-            if colors[node] == WHITE:
-                if dfs(node):
-                    return True
-        
-        return False
+        # Use the detailed cycle detection and just return boolean
+        field_deps = {node: set() for node in graph}  # Empty field deps for compatibility
+        return self._find_cycles_with_details(graph, field_deps) is not None
     
     def _topological_sort_with_priority(self, rules: List['Rule'], 
                                        dependencies: Dict[str, Set[str]]) -> List['Rule']:
@@ -243,8 +305,9 @@ class DAGStrategy:
             }
         
         try:
-            dependency_graph = self._build_dependency_graph(rules)
-            has_cycles = self._has_cycles(dependency_graph)
+            dependency_graph, field_dependencies = self._build_dependency_graph(rules)
+            cycle_info = self._find_cycles_with_details(dependency_graph, field_dependencies)
+            has_cycles = cycle_info is not None
             
             # Calculate statistics
             independent_rules = sum(1 for deps in dependency_graph.values() if not deps)
@@ -253,7 +316,7 @@ class DAGStrategy:
             # Calculate dependency depth (longest path)
             max_depth = self._calculate_dependency_depth(dependency_graph)
             
-            return {
+            result = {
                 'total_rules': len(rules),
                 'dependency_depth': max_depth,
                 'independent_rules': independent_rules,
@@ -261,6 +324,15 @@ class DAGStrategy:
                 'circular_dependencies': has_cycles,
                 'dependency_graph': {k: list(v) for k, v in dependency_graph.items()}
             }
+            
+            # Add detailed cycle information if present
+            if cycle_info:
+                result['cycle_details'] = {
+                    'cycle_chain': cycle_info.cycle_chain,
+                    'cycle_description': str(cycle_info)
+                }
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"Failed to analyze dependencies: {e}")
