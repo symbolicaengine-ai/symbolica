@@ -160,8 +160,8 @@ class LLMClientAdapter:
         """Basic security check for prompts."""
         warnings = []
         
-        # Length check
-        if len(prompt) > 5000:
+        # Length check (more reasonable for business prompts)
+        if len(prompt) > 8000:
             warnings.append("very_long_prompt")
         
         # Basic injection patterns
