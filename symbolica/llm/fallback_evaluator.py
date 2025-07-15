@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from ..core.exceptions import EvaluationError, ValidationError
 from .prompt_evaluator import PromptEvaluator
 from .exceptions import LLMError
+import re
 
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,72 @@ class FallbackEvaluator:
             'llm_fallback': 0,
             'total_failures': 0
         }
+    
+    def _analyze_evaluation_error(self, error_msg: str, context_facts: Dict[str, Any]) -> tuple[str, str]:
+        """
+        Analyze the evaluation error to identify the problematic field and issue.
+        
+        Returns:
+            tuple: (field_name, issue_description)
+        """
+        error_msg_lower = error_msg.lower()
+        
+        # Check for missing fields
+        missing_field_patterns = [
+            r"'([^']+)' is not defined",
+            r"name '([^']+)' is not defined",
+            r"missing field[s]?\s*:?\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+            r"field '([^']+)' not found",
+            r"unknown field[s]?\s*:?\s*([a-zA-Z_][a-zA-Z0-9_]*)"
+        ]
+        
+        for pattern in missing_field_patterns:
+            match = re.search(pattern, error_msg_lower)
+            if match:
+                field_name = match.group(1)
+                return field_name, "field is missing or undefined"
+        
+        # Check for type conversion errors
+        type_error_patterns = [
+            r"unsupported operand type\(s\) for .+: '(.+)' and",
+            r"can't convert (.+) to (\w+)",
+            r"invalid literal for (\w+)\(\) with base \d+: '([^']+)'",
+            r"could not convert string to (\w+): '([^']+)'"
+        ]
+        
+        for pattern in type_error_patterns:
+            match = re.search(pattern, error_msg_lower)
+            if match:
+                # Try to find the field name in context that has this problematic value
+                if len(match.groups()) >= 2:
+                    problematic_value = match.group(2) if len(match.groups()) >= 2 else match.group(1)
+                    for field_name, field_value in context_facts.items():
+                        if str(field_value) == problematic_value:
+                            return field_name, f"type conversion error - value '{problematic_value}' cannot be converted to number"
+                return "unknown_field", f"type conversion error - {match.group(0)}"
+        
+        # Check for None/null value errors
+        if 'nonetype' in error_msg_lower or 'none' in error_msg_lower:
+            # Try to find None values in context
+            none_fields = [field for field, value in context_facts.items() if value is None]
+            if none_fields:
+                return none_fields[0], "field value is None/null"
+            return "unknown_field", "encountered None/null value"
+        
+        # Check for comparison errors with strings
+        if '>=' in error_msg_lower or '<=' in error_msg_lower or '>' in error_msg_lower or '<' in error_msg_lower:
+            for field_name, field_value in context_facts.items():
+                if isinstance(field_value, str) and not field_value.replace('.', '').replace('-', '').isdigit():
+                    return field_name, f"cannot compare text value '{field_value}' numerically"
+        
+        # General fallback - try to extract any field name from the error
+        field_name_pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b'
+        field_matches = re.findall(field_name_pattern, error_msg)
+        for potential_field in field_matches:
+            if potential_field in context_facts:
+                return potential_field, "evaluation error"
+        
+        return "unknown_field", "evaluation error"
     
     def prompt(self, 
                condition: str,
@@ -106,6 +173,13 @@ class FallbackEvaluator:
             structured_error = str(e)
             logger.debug(f"Structured evaluation failed for '{condition}': {structured_error}")
             
+            # Analyze the error to provide better console logging
+            problematic_field, issue_description = self._analyze_evaluation_error(structured_error, context_facts)
+            
+            # Console logging for LLM fallback activation
+            rule_context = f" (Rule: {rule_id})" if rule_id else ""
+            print(f"🔄 Falling back to LLM for '{problematic_field}' because {issue_description}{rule_context}")
+            
             # Step 2: Fall back to LLM evaluation
             try:
                 llm_result = self._try_llm_evaluation(
@@ -116,6 +190,8 @@ class FallbackEvaluator:
                 self._fallback_stats['llm_fallback'] += 1
                 
                 logger.info(f"LLM fallback succeeded for: {condition}")
+                print(f"✅ LLM fallback completed successfully for '{problematic_field}'")
+                
                 return FallbackResult(
                     value=llm_result['value'],
                     method_used='llm',
@@ -128,6 +204,7 @@ class FallbackEvaluator:
                 execution_time = (time.perf_counter() - start_time) * 1000
                 self._fallback_stats['total_failures'] += 1
                 
+                print(f"❌ LLM fallback failed for '{problematic_field}': {str(llm_error)}")
                 logger.error(f"Both structured and LLM evaluation failed for '{condition}': "
                            f"Structured: {structured_error}, LLM: {str(llm_error)}")
                 
@@ -156,17 +233,8 @@ class FallbackEvaluator:
             fired_rules=[]
         )
         
-        # Try to evaluate the condition
+        # Try to evaluate the condition - let it handle missing fields naturally
         result = self.structured_evaluator.evaluate(condition, context)
-        
-        # Check if result depends on missing fields
-        required_fields = self.structured_evaluator.extract_fields(condition)
-        missing_fields = [field for field in required_fields 
-                         if field not in context_facts or context_facts[field] is None]
-        
-        if missing_fields:
-            raise EvaluationError(f"Missing required fields: {missing_fields}")
-        
         return result
     
     def _try_llm_evaluation(self, 
