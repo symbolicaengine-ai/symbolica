@@ -40,9 +40,24 @@ class ExpressionParser:
         if not value.strip():
             return False
         
-        # Check for arithmetic operators
-        arithmetic_ops = ['+', '-', '*', '/', '//', '%', '**']
-        has_arithmetic = any(op in value for op in arithmetic_ops)
+        # Check for arithmetic operators (be more careful about hyphens)
+        # Use regex to find arithmetic operators in mathematical contexts
+        import re
+        
+        # Check for clear mathematical arithmetic patterns
+        arithmetic_patterns = [
+            r'\s\+\s',     # spaced plus: "a + b"
+            r'\s\-\s',     # spaced minus: "a - b"  
+            r'\s\*\s',     # spaced multiply: "a * b"
+            r'\s/\s',      # spaced divide: "a / b"
+            r'\s//\s',     # spaced floor divide: "a // b"
+            r'\s%\s',      # spaced modulo: "a % b"
+            r'\*\*',       # power: "a**b"
+            r'^\s*\-',     # leading minus: "-123"
+            r'[0-9]\s*[\+\-\*/]\s*[0-9]',  # numbers with operators: "5+3", "10-2"
+        ]
+        
+        has_arithmetic = any(re.search(pattern, value) for pattern in arithmetic_patterns)
         
         # Check for parentheses (likely mathematical expression)
         has_parentheses = '(' in value and ')' in value
@@ -80,8 +95,9 @@ class ExpressionParser:
         # Additional checks to avoid false positives
         # Skip if it's clearly a sentence (multiple words with spaces and no operators)
         # BUT don't exclude template expressions even if they have spaces
+        simple_operators = ['+', '-', '*', '/', '==', '!=', '<', '>', '<=', '>=']
         if (' ' in value and 
-            not any(op in value for op in arithmetic_ops + comparison_ops) and 
+            not any(op in value for op in simple_operators) and 
             not has_parentheses and 
             not has_templates and
             not has_function_call and
